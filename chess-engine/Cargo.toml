@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 chess = "3.2.0"
 tch = "0.13"
+strum = "0.25"
+strum_macros = "0.25"
