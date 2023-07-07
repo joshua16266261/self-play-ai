@@ -1,4 +1,6 @@
 mod tictactoe;
+mod mcts;
+mod model;
 use tch::{Tensor};
 use tch::display::set_print_options_short;
 

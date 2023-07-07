@@ -30,10 +30,13 @@ pub struct State {
     status: Status
 }
 
+#[derive(Clone)]
 pub struct Action {
     pub row: usize,
     pub col: usize
 }
+
+pub type Policy = [f32; 9];
 
 impl Player {
     pub fn get_opposite_player(&self) -> Self {
