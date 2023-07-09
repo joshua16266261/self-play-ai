@@ -1,7 +1,7 @@
 use std::default::Default;
 use std::fmt;
 
-#[derive(Clone, strum_macros::Display, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, strum_macros::Display, Default, PartialEq, Eq)]
 pub enum Player {
     #[default]
     X,
@@ -26,7 +26,7 @@ enum Status{
 pub struct State {
     board: Board,
     pub current_player: Player,
-    actions_played: u8,
+    num_actions_played: u8,
     status: Status
 }
 
@@ -87,9 +87,9 @@ impl State {
                 Some(player) => Err(format!("Illegal move: player {player} has already played on that square")),
                 None => {
                     let mut next_state = self.clone();
-                    next_state.board.0[action.row][action.col] = Piece(Some(self.current_player.clone()));
+                    next_state.board.0[action.row][action.col] = Piece(Some(self.current_player));
                     next_state.current_player = Player::get_opposite_player(&self.current_player);
-                    next_state.actions_played += 1;
+                    next_state.num_actions_played += 1;
     
                     let row = &next_state.board.0[action.row];
                     let is_row_win = row[0] == row[1] && row[1] == row[2];
@@ -105,7 +105,7 @@ impl State {
                     
                     if is_row_win || is_col_win || is_nw_se_diag_win || is_ne_sw_diag_win {
                         next_state.status = Status::Won
-                    } else if next_state.actions_played == 9 {
+                    } else if next_state.num_actions_played == 9 {
                         next_state.status = Status::Tied
                     }
                     Ok(next_state)
@@ -130,11 +130,11 @@ impl State {
         Vec::with_capacity(0)
     }
 
-    pub fn get_value_and_terminated(&self) -> (i32, bool) {
+    pub fn get_value_and_terminated(&self) -> (f32, bool) {
         match self.status {
-            Status::Won => (1, true),
-            Status::Tied => (0, true),
-            Status::Ongoing => (0, false)
+            Status::Won => (1.0, true),
+            Status::Tied => (0.0, true),
+            Status::Ongoing => (0.0, false)
         }
     }
 
