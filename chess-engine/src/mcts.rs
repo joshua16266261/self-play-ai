@@ -4,6 +4,7 @@ use rand::prelude::*;
 use rand::distributions::WeightedIndex;
 use tch::nn::VarStore;
 // use rand_distr::Dirichlet;
+use tqdm::tqdm;
 
 // TODO: implement custom Default
 #[derive(Clone, Copy)]
@@ -214,7 +215,7 @@ impl Learner<'_> {
     }
 
     fn learn(&mut self) {
-        for i in 0..self.args.num_learn_iters {
+        for i in tqdm(0..self.args.num_learn_iters) {
             let mut state_memory: Vec<[f32; 27]> = Vec::new();
             let mut policy_memory: Vec<Policy> = Vec::new();
             let mut value_memory: Vec<f32> = Vec::new();
