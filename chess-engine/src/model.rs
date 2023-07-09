@@ -1,5 +1,5 @@
 use crate::tictactoe::Policy;
-use tch::{Tensor, TrainableCModule, IValue, Device};
+use tch::{Tensor, TrainableCModule, IValue, Device, nn::{Adam, OptimizerConfig, VarStore}};
 
 pub struct Model {
     pub net: TrainableCModule
@@ -7,6 +7,7 @@ pub struct Model {
 
 impl Model {
     pub fn predict(&mut self, state: [f32; 27]) -> (Policy, f32) {
+        // TODO: Don't set_eval here
         self.net.set_eval();
 
         let input = Tensor::from_slice(&state).view((3, 3, 3)).to_device(Device::Mps);
@@ -20,11 +21,6 @@ impl Model {
             _ => panic!("unexpected output {:?}", output),
         };
 
-        // let policy_cpu = policy.to(Device::Cpu);
-        // let value_cpu = value.to(Device::Cpu);
-        // println!("{policy_cpu}");
-        // println!("{value_cpu}");
-
         let policy_vec = Vec::<f32>::try_from(policy.view(-1)).unwrap();
         let value_float = value.double_value(&[0]) as f32;
 
@@ -34,5 +30,14 @@ impl Model {
         }
 
         (return_policy, value_float)
+    }
+
+    pub fn train(&mut self, states: Vec<[f32; 27]>, policies: Vec<Policy>, values: Vec<f32>, varstore: &VarStore) {
+        self.net.set_train();
+
+        let optimizer = Adam::default().build(&varstore, 1e-4).unwrap();
+
+        // TODO: Training loop
+        
     }
 }

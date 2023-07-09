@@ -1,12 +1,18 @@
 use crate::tictactoe::{State, Action, Policy};
 use crate::model::Model;
-// use rand::prelude::*;
+use rand::prelude::*;
+use rand::distributions::WeightedIndex;
+use tch::nn::VarStore;
 // use rand_distr::Dirichlet;
 
+// TODO: implement custom Default
 #[derive(Clone, Copy)]
 struct Args {
     c: f32,
-    num_searches: i32
+    num_searches: u32,
+    temperature: f32,
+    num_learn_iters: u32,
+    num_self_play_iters: u32
 }
 
 struct Node {
@@ -28,6 +34,12 @@ struct Tree {
 struct MCTS {
     args: Args,
     model: Model
+}
+
+struct Learner<'a> {
+    args: Args,
+    mcts: MCTS,
+    varstore: &'a VarStore
 }
 
 impl Node {
@@ -126,6 +138,7 @@ impl MCTS {
             arena: vec![root_node]
         };
 
+        // TODO: Add Dirichlet noise
         // let dirichlet = Dirichlet::new(&[1.0, 2.0, 3.0]).unwrap();
         // let mut rng = rand::thread_rng();
         // let samples = dirichlet.sample(&mut rng);
@@ -167,5 +180,55 @@ impl MCTS {
         };
 
         visit_counts.map(|x| x / total_visit_count)
+    }
+}
+
+impl Learner<'_> {
+    fn self_play(&mut self) -> (Vec<[f32; 27]>, Vec<Policy>, Vec<f32>) {
+        let mut state_history: Vec<State> = Vec::new();
+        let mut policy_history: Vec<Policy> = Vec::new();
+
+        let mut state: State = Default::default();
+        let mut rng = rand::thread_rng();
+        loop {
+            state_history.push(state.clone());
+            let action_probs = self.mcts.search(state.clone());
+            policy_history.push(action_probs);
+
+            // Higher temperature => squishes probabilities together => encourages more exploration
+            let termperature_action_probs: Vec<f32> = action_probs.iter().map(|x| f32::powf(*x, self.args.temperature)).collect();
+            let dist = WeightedIndex::new(&termperature_action_probs).unwrap();
+            let idx = dist.sample(&mut rng);
+            let action = Action{ row: idx / 3, col: idx % 3};
+            state = state.get_next_state(&action).unwrap();
+            let (value, is_terminal) = state.get_value_and_terminated();
+
+            if is_terminal {
+                return (
+                    state_history.iter().map(|x| x.encode()).collect(),
+                    policy_history,
+                    state_history.iter().map(|x| if x.current_player == state.current_player { value } else { -value }).collect() // TODO: Is this correct?
+                );
+            }
+        }
+    }
+
+    fn learn(&mut self) {
+        for i in 0..self.args.num_learn_iters {
+            let mut state_memory: Vec<[f32; 27]> = Vec::new();
+            let mut policy_memory: Vec<Policy> = Vec::new();
+            let mut value_memory: Vec<f32> = Vec::new();
+
+            for _ in 0..self.args.num_self_play_iters {
+                let (mut states, mut policies, mut values) = self.self_play();
+
+                state_memory.append(&mut states);
+                policy_memory.append(&mut policies);
+                value_memory.append(&mut values);
+            }
+
+            self.mcts.model.train(state_memory, policy_memory, value_memory, self.varstore);
+            self.mcts.model.net.save(format!("../tictactoe_model_{i}.pt")).unwrap();
+        }
     }
 }
