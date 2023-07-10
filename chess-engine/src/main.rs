@@ -1,15 +1,31 @@
 mod tictactoe;
 mod mcts;
 mod model;
-use tch::{nn, Tensor, vision::imagenet, IndexOp, IValue, Device};
+use model::Model;
+use mcts::{Args, Learner, MCTS};
+use tch::{nn, Device};
 use tch::display::set_print_options_short;
-
-use crate::model::Model;
 
 fn main() {
     set_print_options_short();
 
-    // TODO: Test Learner
+    let mut var_store = nn::VarStore::new(Device::Cpu);
+    let net = tch::TrainableCModule::load("../tictactoe_model.pt", var_store.root()).unwrap();
+    var_store.set_device(Device::Mps);
+
+    let args = Args::default();
+    let model = Model{ net };
+    let mcts = MCTS{ args, model };
+
+    let mut learner = Learner{
+        args,
+        mcts,
+        var_store: &var_store
+    };
+
+    learner.learn();
+
+    // TODO: Play against the bot to see if it actually learned
 
     // Test tictactoe stuff
     // let mut state: tictactoe::State = Default::default();

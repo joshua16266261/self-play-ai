@@ -4,16 +4,17 @@ use rand::prelude::*;
 use rand::distributions::WeightedIndex;
 use tch::nn::VarStore;
 // use rand_distr::Dirichlet;
-use tqdm::tqdm;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-// TODO: implement custom Default
 #[derive(Clone, Copy)]
-struct Args {
-    c: f32,
-    num_searches: u32,
-    temperature: f32,
-    num_learn_iters: u32,
-    num_self_play_iters: u32
+pub struct Args {
+    pub c: f32,
+    pub num_searches: u32,
+    pub temperature: f32,
+    pub num_learn_iters: u32,
+    pub num_self_play_iters: u32,
+    pub batch_size: i64,
+    pub num_epochs: u32
 }
 
 struct Node {
@@ -32,15 +33,29 @@ struct Tree {
     arena: Vec<Node>
 }
 
-struct MCTS {
-    args: Args,
-    model: Model
+pub struct MCTS {
+    pub args: Args,
+    pub model: Model
 }
 
-struct Learner<'a> {
-    args: Args,
-    mcts: MCTS,
-    varstore: &'a VarStore
+pub struct Learner<'a> {
+    pub args: Args,
+    pub mcts: MCTS,
+    pub var_store: &'a VarStore
+}
+
+impl Default for Args {
+    fn default() -> Self {
+        Args {
+            c: f32::sqrt(2.0),
+            num_searches: 50,
+            temperature: 1.25,
+            num_learn_iters: 10,
+            num_self_play_iters: 20,
+            batch_size: 32,
+            num_epochs: 30
+        }
+    }
 }
 
 impl Node {
@@ -132,7 +147,8 @@ impl MCTS {
             value_sum: 0.0
         };
 
-        let (policy, _) = self.model.predict(root_node.state.encode());
+        // let (policy, _) = self.model.predict(root_node.state.encode());
+        let (policy, _) = self.model.predict(&root_node.state);
 
         let mut tree = Tree{
             args: self.args,
@@ -160,7 +176,8 @@ impl MCTS {
             let node_id = node.id;
 
             if !is_terminal {
-                let (policy_pred, value_pred) = self.model.predict(node.state.encode());
+                // let (policy_pred, value_pred) = self.model.predict(node.state.encode());
+                let (policy_pred, value_pred) = self.model.predict(&node.state);
                 value = value_pred;
                 tree.expand(node_id, policy_pred);
             }
@@ -214,8 +231,29 @@ impl Learner<'_> {
         }
     }
 
-    fn learn(&mut self) {
-        for i in tqdm(0..self.args.num_learn_iters) {
+    pub fn learn(&mut self) {
+        let multi_pb = MultiProgress::new();
+        let pb_style = ProgressStyle::with_template(
+            "{prefix:>9} [{elapsed_precise}] {bar:40} {pos:>7}/{len:7} (ETA: {eta_precise}) {msg}",
+        )
+        .unwrap()
+        .progress_chars("##-");
+
+        let learn_pb = multi_pb.add(ProgressBar::new(self.args.num_learn_iters as u64));
+        learn_pb.set_style(pb_style.clone());
+        learn_pb.set_prefix("Learning");
+
+        let self_play_pb = multi_pb.insert_after(&learn_pb, ProgressBar::new(self.args.num_self_play_iters as u64));
+        self_play_pb.set_style(pb_style.clone());
+        self_play_pb.set_prefix("Self-play");
+
+        let train_pb = multi_pb.insert_after(&self_play_pb, ProgressBar::new(self.args.num_epochs as u64));
+        train_pb.set_style(pb_style);
+        train_pb.set_prefix("Training");
+
+        train_pb.finish_and_clear();
+
+        for i in 0..self.args.num_learn_iters {
             let mut state_memory: Vec<[f32; 27]> = Vec::new();
             let mut policy_memory: Vec<Policy> = Vec::new();
             let mut value_memory: Vec<f32> = Vec::new();
@@ -226,10 +264,28 @@ impl Learner<'_> {
                 state_memory.append(&mut states);
                 policy_memory.append(&mut policies);
                 value_memory.append(&mut values);
+
+                self_play_pb.inc(1);
             }
 
-            self.mcts.model.train(state_memory, policy_memory, value_memory, self.varstore);
+            self_play_pb.reset();
+
+            self.mcts.model.train(
+                state_memory, 
+                policy_memory, 
+                value_memory, 
+                self.var_store, 
+                self.args.batch_size, 
+                self.args.num_epochs,
+                &train_pb
+            );
             self.mcts.model.net.save(format!("../tictactoe_model_{i}.pt")).unwrap();
+
+            learn_pb.inc(1);
         }
+
+        learn_pb.finish_and_clear();
+        self_play_pb.finish_and_clear();
+        train_pb.finish_and_clear();
     }
 }

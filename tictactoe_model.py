@@ -6,11 +6,13 @@ class TicTacToeNet(nn.Module):
         super().__init__()
         self.torso = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(27, 5),
+            nn.Linear(27, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
             nn.ReLU()
         )
-        self.policy_head = nn.Linear(5, 9)
-        self.value_head = nn.Linear(5, 1)
+        self.policy_head = nn.Linear(32, 9)
+        self.value_head = nn.Linear(32, 1)
 
     def forward(self, x):
         x = self.torso(x)
