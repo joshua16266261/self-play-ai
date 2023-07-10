@@ -11,8 +11,16 @@ class TicTacToeNet(nn.Module):
             nn.Linear(64, 32),
             nn.ReLU()
         )
-        self.policy_head = nn.Linear(32, 9)
-        self.value_head = nn.Linear(32, 1)
+        self.policy_head = nn.Sequential(
+            nn.Linear(32, 9),
+            # nn.LogSoftmax(dim=-1)
+        )
+        self.value_head = nn.Sequential(
+            nn.Linear(32, 8),
+            nn.ReLU(),
+            nn.Linear(8, 1),
+            # nn.Tanh()
+        )
 
     def forward(self, x):
         x = self.torso(x)

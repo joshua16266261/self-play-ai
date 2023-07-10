@@ -1,7 +1,7 @@
 mod tictactoe;
 mod mcts;
 mod model;
-use model::Model;
+use model::{Model, TicTacToeNet};
 use mcts::{Args, Learner, MCTS};
 use tch::{nn, Device};
 use tch::display::set_print_options_short;
@@ -10,11 +10,17 @@ fn main() {
     set_print_options_short();
 
     let mut var_store = nn::VarStore::new(Device::Cpu);
-    let net = tch::TrainableCModule::load("../tictactoe_model.pt", var_store.root()).unwrap();
+    // let net = tch::TrainableCModule::load("../tictactoe_model.pt", var_store.root()).unwrap();
+    let net = TicTacToeNet::new(&var_store.root(), 4, 64);
     var_store.set_device(Device::Mps);
 
-    let args = Args::default();
-    let model = Model{ net };
+    let args = Args {
+        num_epochs: 10000,
+        num_learn_iters: 1,
+        num_self_play_iters: 1,
+        ..Default::default()
+    };
+    let model = Model{ args, net };
     let mcts = MCTS{ args, model };
 
     let mut learner = Learner{
@@ -25,6 +31,7 @@ fn main() {
 
     learner.learn();
 
+    // TODO: Try building the model directly in Rust without implementing nn::Module
     // TODO: Play against the bot to see if it actually learned
 
     // Test tictactoe stuff

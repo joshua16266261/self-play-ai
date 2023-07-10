@@ -275,11 +275,11 @@ impl Learner<'_> {
                 policy_memory, 
                 value_memory, 
                 self.var_store, 
-                self.args.batch_size, 
-                self.args.num_epochs,
+                self.args, 
                 &train_pb
             );
-            self.mcts.model.net.save(format!("../tictactoe_model_{i}.pt")).unwrap();
+            // self.mcts.model.net.save(format!("../tictactoe_model_{i}.pt")).unwrap();
+            self.var_store.save(format!("../tictactoe_model_{i}.pt")).unwrap();
 
             learn_pb.inc(1);
         }
