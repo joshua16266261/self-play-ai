@@ -52,45 +52,45 @@ fn resnet(vs: &nn::Path, num_resnet_blocks: u32, in_channels: i64, num_hidden: i
 }
 
 impl TicTacToeNet {
-    // pub fn new(vs: &nn::Path, num_resnet_blocks: u32, num_hidden: i64) -> TicTacToeNet {
-    //     let conv_config = nn::ConvConfig { padding: 1, ..Default::default() };
-    //     TicTacToeNet {
-    //         torso: resnet(vs, num_resnet_blocks, 3, num_hidden),
-    //         policy_head: nn::seq_t()
-    //             .add(nn::conv2d(vs, num_hidden, 32, 3, conv_config))
-    //             .add(nn::batch_norm2d(vs, 32, Default::default()))
-    //             .add_fn(|x| x.relu())
-    //             .add_fn(|x| x.flat_view())
-    //             .add(nn::linear(vs, 32 * 9, 9, Default::default()))
-    //             .add_fn(|x| x.log_softmax(-1, Kind::Float)),
-    //         value_head: nn::seq_t()
-    //             .add(nn::conv2d(vs, num_hidden, 3, 3, conv_config))
-    //             .add(nn::batch_norm2d(vs, 3, Default::default()))
-    //             .add_fn(|x| x.relu())
-    //             .add_fn(|x| x.flat_view())
-    //             .add(nn::linear(vs, 3 * 9, 1, Default::default()))
-    //             .add_fn(|x| x.tanh())
-    //     }
-    // }
-
     pub fn new(vs: &nn::Path, num_resnet_blocks: u32, num_hidden: i64) -> TicTacToeNet {
+        let conv_config = nn::ConvConfig { padding: 1, ..Default::default() };
         TicTacToeNet {
-            torso: nn::seq_t()
-                .add_fn(|x| x.flat_view())
-                .add(nn::linear(vs, 27, 64, Default::default()))
-                .add_fn(|x| x.relu())
-                .add(nn::linear(vs, 64, 32, Default::default()))
-                .add_fn(|x| x.relu()),
+            torso: resnet(vs, num_resnet_blocks, 3, num_hidden),
             policy_head: nn::seq_t()
-                .add(nn::linear(vs, 32, 9, Default::default()))
-                .add_fn(|x| x.log_softmax(-1, Kind::Float)),
-            value_head: nn::seq_t()
-                .add(nn::linear(vs, 32, 8, Default::default()))
+                .add(nn::conv2d(vs, num_hidden, 32, 3, conv_config))
+                .add(nn::batch_norm2d(vs, 32, Default::default()))
                 .add_fn(|x| x.relu())
-                .add(nn::linear(vs, 8, 1, Default::default()))
+                .add_fn(|x| x.flat_view())
+                .add(nn::linear(vs, 32 * 9, 9, Default::default())),
+                // .add_fn(|x| x.log_softmax(-1, Kind::Float)),
+            value_head: nn::seq_t()
+                .add(nn::conv2d(vs, num_hidden, 3, 3, conv_config))
+                .add(nn::batch_norm2d(vs, 3, Default::default()))
+                .add_fn(|x| x.relu())
+                .add_fn(|x| x.flat_view())
+                .add(nn::linear(vs, 3 * 9, 1, Default::default()))
                 .add_fn(|x| x.tanh())
         }
     }
+
+    // pub fn new(vs: &nn::Path, num_resnet_blocks: u32, num_hidden: i64) -> TicTacToeNet {
+    //     TicTacToeNet {
+    //         torso: nn::seq_t()
+    //             .add_fn(|x| x.flat_view())
+    //             .add(nn::linear(vs, 27, 64, Default::default()))
+    //             .add_fn(|x| x.relu())
+    //             .add(nn::linear(vs, 64, 32, Default::default()))
+    //             .add_fn(|x| x.relu()),
+    //         policy_head: nn::seq_t()
+    //             .add(nn::linear(vs, 32, 9, Default::default()))
+    //             .add_fn(|x| x.log_softmax(-1, Kind::Float)),
+    //         value_head: nn::seq_t()
+    //             .add(nn::linear(vs, 32, 8, Default::default()))
+    //             .add_fn(|x| x.relu())
+    //             .add(nn::linear(vs, 8, 1, Default::default()))
+    //             // .add_fn(|x| x.tanh())
+    //     }
+    // }
 
     fn forward(&self, x: &Tensor, train: bool) -> (Tensor, Tensor) {
         let torso_output = self.torso.forward_t(x, train);
@@ -109,7 +109,7 @@ impl Model {
         let encoded_state = state.encode();
         let valid_actions = state.get_valid_actions();
 
-        let input = Tensor::from_slice(&encoded_state).view((1, 3, 3, 3)).to_device(Device::Mps);
+        let input = Tensor::from_slice(&encoded_state).view((1, 3, 3, 3)).to(Device::Mps);
         // let output = self.net.forward_is(&[IValue::from(input.unsqueeze(0))]).unwrap();
         let (policy, value) = self.net.forward(&input, false);
 
@@ -149,7 +149,7 @@ impl Model {
         pb: &ProgressBar) {
         // self.net.set_train();
 
-        let mut optimizer = Adam::default().build(var_store, 1e-4).unwrap();
+        let mut optimizer = Adam::default().build(var_store, 1e-3).unwrap();
 
         let num_inputs = states.len() as i64;
 
@@ -168,8 +168,8 @@ impl Model {
         let policy_tensors = Tensor::from_slice(&policies_flattened).view((num_inputs, 9));
 
         // Convert values to tensor of shape (num_inputs, 1)
-        let mut value_tensors = Tensor::from_slice(&values).to(Device::Mps);
-        value_tensors = value_tensors.view((num_inputs, 1));
+        let mut value_tensors = Tensor::from_slice(&values);
+        value_tensors = value_tensors.view((num_inputs, 1)).to(Device::Mps);
 
         pb.reset();
         for _ in 0..args.num_epochs {
@@ -177,6 +177,10 @@ impl Model {
             let mut loss = 0.0;
             for (state_batch, policy_batch) in
                 Iter2::new(&state_tensors, &policy_tensors, args.batch_size).shuffle().to_device(Device::Mps).return_smaller_last_batch() {
+                // Iter2::new(&state_tensors, &policy_tensors, args.batch_size).shuffle().return_smaller_last_batch() {
+
+                // optimizer.zero_grad();
+
                 let value_batch = value_tensors.i(idx..min(idx+args.batch_size, num_inputs));
 
                 // let output = self.net.forward_is(&[IValue::from(state_batch)]).unwrap();
@@ -189,12 +193,11 @@ impl Model {
                 // };
                 let (policy, value) = self.net.forward(&state_batch, true);
 
-                // let policy_softmax = policy.log_softmax(-1, Kind::Float);
-                let policy_nll = policy * policy_batch;
+                let policy_softmax = policy.log_softmax(-1, Kind::Float);
+                let policy_nll = policy_softmax * policy_batch;
                 let policy_loss = -policy_nll.sum(Kind::Float) / num_inputs;
 
-                let value_tanh = value.tanh();
-                let value_loss = value_tanh.mse_loss(&value_batch, Reduction::Mean);
+                let value_loss = value.mse_loss(&value_batch, Reduction::Mean);
                 let total_loss = policy_loss + value_loss;
 
                 optimizer.backward_step(&total_loss);

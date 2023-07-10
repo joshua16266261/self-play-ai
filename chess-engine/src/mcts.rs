@@ -41,19 +41,21 @@ pub struct MCTS {
 pub struct Learner<'a> {
     pub args: Args,
     pub mcts: MCTS,
-    pub var_store: &'a VarStore
+    pub var_store: &'a mut VarStore
 }
 
 impl Default for Args {
     fn default() -> Self {
         Args {
-            c: f32::sqrt(2.0),
-            num_searches: 50,
+            c: 2.0,
+            num_searches: 60,
             temperature: 1.25,
             num_learn_iters: 10,
-            num_self_play_iters: 20,
-            batch_size: 32,
-            num_epochs: 30
+            // num_learn_iters: 2,
+            num_self_play_iters: 500,
+            // num_self_play_iters: 50,
+            batch_size: 64,
+            num_epochs: 4
         }
     }
 }
@@ -133,7 +135,7 @@ impl Tree {
 }
 
 impl MCTS {
-    fn search(&mut self, state: State) -> Policy {
+    pub fn search(&mut self, state: State) -> Policy {
         let root_node_current_player = state.current_player;
         let root_node_id = 0;
         let root_node = Node{
@@ -278,14 +280,12 @@ impl Learner<'_> {
                 self.args, 
                 &train_pb
             );
-            // self.mcts.model.net.save(format!("../tictactoe_model_{i}.pt")).unwrap();
-            self.var_store.save(format!("../tictactoe_model_{i}.pt")).unwrap();
-
+            self.var_store.save("../tictactoe_model_{i}.safetensors").unwrap();
             learn_pb.inc(1);
         }
 
-        learn_pb.finish_and_clear();
-        self_play_pb.finish_and_clear();
-        train_pb.finish_and_clear();
+        // learn_pb.finish_and_clear();
+        // self_play_pb.finish_and_clear();
+        // train_pb.finish_and_clear();
     }
 }
