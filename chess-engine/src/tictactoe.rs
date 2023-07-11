@@ -15,11 +15,11 @@ struct Piece(Option<Player>);
 struct Board([[Piece; 3]; 3]);
 
 #[derive(Clone, strum_macros::Display, Default, PartialEq, Eq)]
-enum Status{
+pub enum Status{
     #[default]
     Ongoing,
     Tied,
-    Won
+    Completed
 }
 
 #[derive(Default, Clone)]
@@ -27,7 +27,7 @@ pub struct State {
     board: Board,
     pub current_player: Player,
     num_actions_played: u8,
-    status: Status
+    pub status: Status
 }
 
 #[derive(Clone)]
@@ -104,7 +104,7 @@ impl State {
                         next_state.board.0[0][2] == next_state.board.0[1][1] && next_state.board.0[1][1] == next_state.board.0[2][0];
                     
                     if is_row_win || is_col_win || is_nw_se_diag_win || is_ne_sw_diag_win {
-                        next_state.status = Status::Won
+                        next_state.status = Status::Completed
                     } else if next_state.num_actions_played == 9 {
                         next_state.status = Status::Tied
                     }
@@ -131,8 +131,11 @@ impl State {
     }
 
     pub fn get_value_and_terminated(&self) -> (f32, bool) {
+        // The value is given from the node's own perspective
+        // i.e., if it's X to play but the game is over
+        // then X is lost and the value is -1 (which is +1 from the parent's perspective)
         match self.status {
-            Status::Won => (1.0, true),
+            Status::Completed => (-1.0, true),
             Status::Tied => (0.0, true),
             Status::Ongoing => (0.0, false)
         }

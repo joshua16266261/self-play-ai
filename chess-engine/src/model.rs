@@ -111,7 +111,8 @@ impl Model {
 
         let input = Tensor::from_slice(&encoded_state).view((1, 3, 3, 3)).to(Device::Mps);
         // let output = self.net.forward_is(&[IValue::from(input.unsqueeze(0))]).unwrap();
-        let (policy, value) = self.net.forward(&input, false);
+        let (mut policy, value) = self.net.forward(&input, false);
+        policy = policy.softmax(-1, Kind::Float);
 
         // let (policy, value) = match output {
         //     IValue::Tuple(ivalues) => match &ivalues[..] {
@@ -121,7 +122,7 @@ impl Model {
         //     _ => panic!("unexpected output {:?}", output),
         // };
 
-        let policy_vec = Vec::<f32>::try_from(policy.view(-1)).unwrap();
+        let policy_vec = Vec::<f32>::try_from(policy.contiguous().view(-1)).unwrap();
         let value_float = value.double_value(&[0]) as f32;
 
         let mut return_policy = [0f32; 9];
@@ -132,9 +133,10 @@ impl Model {
             return_policy[idx] = prob;
             total_prob += prob;
         }
-        for prob in return_policy.iter_mut() {
-            *prob /= total_prob;
-        }
+        // for prob in return_policy.iter_mut() {
+        //     *prob /= total_prob;
+        // }
+        return_policy = return_policy.map(|x| x / total_prob);
 
         (return_policy, value_float)
     }

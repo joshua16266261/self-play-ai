@@ -1,4 +1,4 @@
-use crate::tictactoe::{State, Action, Policy};
+use crate::tictactoe::{State, Action, Policy, Status};
 use crate::model::Model;
 use rand::prelude::*;
 use rand::distributions::WeightedIndex;
@@ -49,8 +49,9 @@ impl Default for Args {
         Args {
             c: 2.0,
             num_searches: 60,
-            temperature: 1.25,
-            num_learn_iters: 10,
+            // temperature: 1.25,
+            temperature: 1.0,
+            num_learn_iters: 3,
             // num_learn_iters: 2,
             num_self_play_iters: 500,
             // num_self_play_iters: 50,
@@ -67,21 +68,25 @@ impl Node {
 }
 
 impl Tree {
-    fn get_ucb(&self, parent_id: &usize, child_id: &usize) -> f32 {
-        let parent_node = self.arena.get(*parent_id).unwrap();
-        let child_node = self.arena.get(*child_id).unwrap();
+    fn get_ucb(&self, parent_id: usize, child_id: usize) -> f32 {
+        let parent_node = self.arena.get(parent_id).unwrap();
+        let child_node = self.arena.get(child_id).unwrap();
         let q = match child_node.visit_count {
             0 => 0.0,
-            _ => 1.0 - (child_node.value_sum / (child_node.visit_count as f32) + 1.0) / 2.0
+            // _ => 1.0 - (child_node.value_sum / (child_node.visit_count as f32) + 1.0) / 2.0
+            _ => (-child_node.value_sum / (child_node.visit_count as f32) + 1.0) / 2.0
         };
-        q + self.args.c * (parent_node.visit_count as f32).sqrt() / (1.0 + (child_node.visit_count as f32)) * child_node.prior
+        q + self.args.c * child_node.prior * (parent_node.visit_count as f32).sqrt() / (1.0 + (child_node.visit_count as f32))
     }
 
-    fn select(&self, parent_id: &usize) -> &usize {
-        let parent_node = self.arena.get(*parent_id).unwrap();
-        parent_node.children_ids.iter().max_by(
-            |a, b| self.get_ucb(parent_id, a).partial_cmp(&self.get_ucb(parent_id, b)).unwrap()
-        ).unwrap()
+    fn select(&self, parent_id: usize) -> usize {
+        let parent_node = self.arena.get(parent_id).unwrap();
+        *parent_node.children_ids
+            .iter()
+            .max_by(
+                |a, b| self.get_ucb(parent_id, **a).partial_cmp(&self.get_ucb(parent_id, **b)).unwrap()
+            )
+            .unwrap()
     }
 
     fn expand(&mut self, parent_id: usize, policy: Policy) {
@@ -136,7 +141,9 @@ impl Tree {
 
 impl MCTS {
     pub fn search(&mut self, state: State) -> Policy {
-        let root_node_current_player = state.current_player;
+        let (policy, _) = self.model.predict(&state);
+
+        // let root_node_current_player = state.current_player;
         let root_node_id = 0;
         let root_node = Node{
             state,
@@ -148,9 +155,6 @@ impl MCTS {
             visit_count: 1,
             value_sum: 0.0
         };
-
-        // let (policy, _) = self.model.predict(root_node.state.encode());
-        let (policy, _) = self.model.predict(&root_node.state);
 
         let mut tree = Tree{
             args: self.args,
@@ -165,29 +169,33 @@ impl MCTS {
         tree.expand(root_node_id, policy);
 
         for _ in 0..self.args.num_searches {
-            let mut node = tree.arena.get(0).unwrap();
+            let mut node = tree.arena.get(root_node_id).unwrap();
+
             while node.is_fully_expanded() {
-                node = tree.arena.get(*tree.select(&node.id)).unwrap();
+                node = tree.arena.get(tree.select(node.id)).unwrap();
             }
 
             let (mut value, is_terminal) = node.state.get_value_and_terminated();
-            if node.state.current_player != root_node_current_player {
-                value *= -1.0;
-            }
 
+            // if node.state.current_player != root_node_current_player {
+            //     value *= -1.0;
+            // }
+            
             let node_id = node.id;
 
             if !is_terminal {
-                // let (policy_pred, value_pred) = self.model.predict(node.state.encode());
                 let (policy_pred, value_pred) = self.model.predict(&node.state);
                 value = value_pred;
                 tree.expand(node_id, policy_pred);
+                tree.backprop(node_id, value);
+            } else {
+                tree.backprop(node_id, value);
             }
-
-            tree.backprop(node_id, value);
+            
+            
         };
 
-        let mut visit_counts: Policy = Default::default();
+        let mut visit_counts = Policy::default();
         let mut total_visit_count = 0.0;
         let children_ids = &tree.arena.get(root_node_id).unwrap().children_ids;
         for child_id in children_ids {
@@ -208,16 +216,20 @@ impl Learner<'_> {
         let mut state_history: Vec<State> = Vec::new();
         let mut policy_history: Vec<Policy> = Vec::new();
 
-        let mut state: State = Default::default();
+        let mut state = State::default();
         let mut rng = rand::thread_rng();
+
         loop {
             state_history.push(state.clone());
             let action_probs = self.mcts.search(state.clone());
             policy_history.push(action_probs);
 
             // Higher temperature => squishes probabilities together => encourages more exploration
-            let termperature_action_probs: Vec<f32> = action_probs.iter().map(|x| f32::powf(*x, self.args.temperature)).collect();
-            let dist = WeightedIndex::new(&termperature_action_probs).unwrap();
+            let temperature_action_probs: Vec<f32> = action_probs
+                .iter()
+                .map(|x| f32::powf(*x, self.args.temperature))
+                .collect();
+            let dist = WeightedIndex::new(&temperature_action_probs).unwrap();
             let idx = dist.sample(&mut rng);
             let action = Action{ row: idx / 3, col: idx % 3};
             state = state.get_next_state(&action).unwrap();
@@ -234,12 +246,13 @@ impl Learner<'_> {
     }
 
     pub fn learn(&mut self) {
+        // Progress bars
         let multi_pb = MultiProgress::new();
         let pb_style = ProgressStyle::with_template(
-            "{prefix:>9} [{elapsed_precise}] {bar:40} {pos:>7}/{len:7} (ETA: {eta_precise}) {msg}",
+            "{prefix:>9} [{elapsed_precise}] {bar:40} {pos:>7}/{len:7} (ETA: {eta_precise}) {msg}"
         )
-        .unwrap()
-        .progress_chars("##-");
+            .unwrap()
+            .progress_chars("##-");
 
         let learn_pb = multi_pb.add(ProgressBar::new(self.args.num_learn_iters as u64));
         learn_pb.set_style(pb_style.clone());
@@ -255,6 +268,7 @@ impl Learner<'_> {
 
         train_pb.finish_and_clear();
 
+        // Actual logic
         for i in 0..self.args.num_learn_iters {
             let mut state_memory: Vec<[f32; 27]> = Vec::new();
             let mut policy_memory: Vec<Policy> = Vec::new();
@@ -280,7 +294,8 @@ impl Learner<'_> {
                 self.args, 
                 &train_pb
             );
-            self.var_store.save("../tictactoe_model_{i}.safetensors").unwrap();
+            self.var_store.save(format!("../tictactoe_model_{i}.safetensors")).unwrap();
+
             learn_pb.inc(1);
         }
 
