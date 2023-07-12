@@ -2,7 +2,7 @@ pub mod tictactoe;
 
 use rand::rngs::ThreadRng;
 
-#[derive(Clone, Debug, strum_macros::Display, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, strum_macros::Display, Default, PartialEq, Eq)]
 pub enum Status{
     #[default]
     Ongoing,
@@ -20,8 +20,10 @@ pub trait State: Default + Clone {
     type Player: Player;
 
     fn get_current_player(&self) -> Self::Player;
-    fn get_next_state(&self, action: &<<Self as crate::game::State>::Policy as Policy>::Action) -> Result<Self, String> where Self: std::marker::Sized;
+    fn get_next_state(&self, action: &<<Self as crate::game::State>::Policy as Policy>::Action) ->
+        Result<Self, String> where Self: std::marker::Sized;
     fn get_valid_actions(&self) -> Vec<<<Self as crate::game::State>::Policy as Policy>::Action>;
+    fn get_status(&self) -> Status;
     fn get_value_and_terminated(&self) -> (f32, bool);
     fn encode(&self) -> Self::Encoding;
     fn mask_invalid_actions(&self, policy: Vec<f32>) -> Result<Self::Policy, String>;
@@ -40,5 +42,4 @@ pub trait Policy: Default + Copy {
 
 pub trait Encoding {
     fn get_flat_slice(&self) -> &[f32];
-    // fn get_original_shape() -> &'static [i64];
 }

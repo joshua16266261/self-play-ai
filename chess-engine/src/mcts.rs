@@ -1,8 +1,9 @@
 use crate::game::{State, Policy};
-use crate::model::Model;
+use crate::model::{Net, Model};
 use tch::nn::VarStore;
 // use rand_distr::Dirichlet;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::fs::create_dir;
 
 #[derive(Clone, Copy)]
 pub struct Args {
@@ -31,14 +32,14 @@ struct Tree<T: State> {
     arena: Vec<Node<T>>
 }
 
-pub struct Mcts {
+pub struct Mcts<T: Net> {
     pub args: Args,
-    pub model: Model
+    pub model: Model<T>
 }
 
-pub struct Learner<'a> {
+pub struct Learner<'a, T: Net> {
     pub args: Args,
-    pub mcts: Mcts,
+    pub mcts: Mcts<T>,
     pub var_store: &'a mut VarStore
 }
 
@@ -75,11 +76,15 @@ impl<T: State> Tree<T> {
 
     fn select(&self, parent_id: usize) -> usize {
         let parent_node = self.arena.get(parent_id).unwrap();
+        let node_comparison = |a: &&usize, b: &&usize|
+            self.get_ucb(parent_id, **a)
+            .partial_cmp(
+                &self.get_ucb(parent_id, **b)
+            )
+            .unwrap();
         *parent_node.children_ids
             .iter()
-            .max_by(
-                |a, b| self.get_ucb(parent_id, **a).partial_cmp(&self.get_ucb(parent_id, **b)).unwrap()
-            )
+            .max_by(node_comparison)
             .unwrap()
     }
 
@@ -129,8 +134,8 @@ impl<T: State> Tree<T> {
     }
 }
 
-impl Mcts {
-    pub fn search<T: State>(&mut self, state: T) -> T::Policy {
+impl<T: Net> Mcts<T> {
+    pub fn search(&mut self, state: T::State) -> <<T as crate::model::Net>::State as State>::Policy {
         let (policy, _) = self.model.predict(&state);
 
         let root_node_id = 0;
@@ -177,7 +182,7 @@ impl Mcts {
             tree.backprop(node_id, value);
         };
 
-        let mut visit_counts = T::Policy::default();
+        let mut visit_counts = <<T as crate::model::Net>::State as State>::Policy::default();
         let children_ids = &tree.arena.get(root_node_id).unwrap().children_ids;
         for child_id in children_ids {
             let child_node = tree.arena.get(*child_id).unwrap();
@@ -192,12 +197,17 @@ impl Mcts {
     }
 }
 
-impl Learner<'_> {
-    fn self_play<T: State>(&mut self) -> (Vec<T::Encoding>, Vec<T::Policy>, Vec<f32>) {
-        let mut state_history: Vec<T> = Vec::new();
-        let mut policy_history: Vec<T::Policy> = Vec::new();
+impl<T: Net> Learner<'_, T> {
+    #[allow(clippy::type_complexity)]
+    fn self_play(&mut self) -> (
+        Vec<<<T as crate::model::Net>::State as State>::Encoding>,
+        Vec<<<T as crate::model::Net>::State as State>::Policy>,
+        Vec<f32>
+    ) {
+        let mut state_history: Vec<T::State> = Vec::new();
+        let mut policy_history: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::new();
 
-        let mut state = T::default();
+        let mut state = T::State::default();
         let mut rng = rand::thread_rng();
 
         loop {
@@ -220,7 +230,9 @@ impl Learner<'_> {
         }
     }
 
-    pub fn learn<T: State>(&mut self) {
+    pub fn learn(&mut self, checkpoint_dir: &str) {
+        let _ = create_dir(checkpoint_dir);
+
         // Progress bars
         let multi_pb = MultiProgress::new();
         let pb_style = ProgressStyle::with_template(
@@ -245,16 +257,17 @@ impl Learner<'_> {
 
         // Actual logic
         for i in 0..self.args.num_learn_iters {
-            let mut state_memory: Vec<T::Encoding> = Vec::new();
-            let mut policy_memory: Vec<T::Policy> = Vec::new();
+            let mut state_memory: Vec<<<T as crate::model::Net>::State as State>::Encoding> = Vec::new();
+            let mut policy_memory: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::new();
             let mut value_memory: Vec<f32> = Vec::new();
 
+            // TODO: Parallelize
             for _ in 0..self.args.num_self_play_iters {
                 let (
                     mut states,
                     mut policies,
                     mut values
-                ) = self.self_play::<T>();
+                ) = self.self_play();
 
                 state_memory.append(&mut states);
                 policy_memory.append(&mut policies);
@@ -265,7 +278,7 @@ impl Learner<'_> {
 
             self_play_pb.reset();
 
-            self.mcts.model.train::<T>(
+            self.mcts.model.train(
                 state_memory, 
                 policy_memory, 
                 value_memory, 
@@ -273,7 +286,7 @@ impl Learner<'_> {
                 self.args, 
                 &train_pb
             );
-            self.var_store.save(format!("../tictactoe_model_{i}.safetensors")).unwrap();
+            self.var_store.save(format!("{checkpoint_dir}/{i}.safetensors")).unwrap();
 
             learn_pb.inc(1);
         }

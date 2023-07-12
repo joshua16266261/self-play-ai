@@ -181,6 +181,10 @@ impl super::State for State {
         Vec::with_capacity(0)
     }
 
+    fn get_status(&self) -> super::Status {
+        self.status
+    }
+
     fn get_value_and_terminated(&self) -> (f32, bool) {
         // The value is given from the node's own perspective
         // i.e., if it's X to play but the game is over

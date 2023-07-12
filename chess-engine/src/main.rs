@@ -2,20 +2,25 @@ mod mcts;
 mod model;
 mod game;
 
-use model::{Model, TicTacToeNet};
+use model::{Model};
 use mcts::{Args, Learner, Mcts};
-use tch::{nn, Device};
-use tch::display::set_print_options_short;
-use game::{State, Policy};
-use game::tictactoe;
+use tch::{nn::VarStore, Device};
+use game::{State, Policy, Status};
 
 use crate::game::Player;
 
 // TODO: Test new refactored code
 
+static CHECKPOINT_DIR: &str = "tictactoe_cp";
+static HUMAN_PLAYER: game::tictactoe::Player = game::tictactoe::Player::O;
+
 fn train() {
-    let mut var_store = nn::VarStore::new(Device::Cpu);
-    let net = TicTacToeNet::new(&var_store.root(), 4, 64);
+    let mut var_store = VarStore::new(Device::Cpu);
+    let net = model::tictactoe::Net::new(
+        &var_store.root(),
+        4,
+        64
+    );
     var_store.set_device(Device::Mps);
 
     let args = Args::default();
@@ -28,58 +33,57 @@ fn train() {
         var_store: &mut var_store
     };
 
-    learner.learn::<tictactoe::State>();
+    learner.learn(CHECKPOINT_DIR);
 }
 
 fn play() {
-    let mut var_store = nn::VarStore::new(Device::Cpu);
-    let net = TicTacToeNet::new(&var_store.root(), 4, 64);
-    var_store.load("../tictactoe_model_2.safetensors").unwrap();
+    let mut var_store = VarStore::new(Device::Cpu);
+    let net = model::tictactoe::Net::new(&var_store.root(), 4, 64);
+    var_store.load(format!("{CHECKPOINT_DIR}/2.safetensors")).unwrap();
     var_store.set_device(Device::Mps);
 
     let args = Args::default();
     let model = Model{ args, net };
     let mut mcts = Mcts{ args, model };
 
-    let mut state = tictactoe::State::default();
-
-    let human_player = tictactoe::Player::O;
+    let mut state = game::tictactoe::State::default();
 
     loop {
         println!("{state}");
 
-        if state.get_current_player() == human_player {
-            let mut line = String::new();
-            let _ = std::io::stdin().read_line(&mut line).unwrap();
-            let mut split = line.split_whitespace();
-            let row = split.next().unwrap().parse::<usize>().unwrap();
-            let col = split.next().unwrap().parse::<usize>().unwrap();
+        let action =
+            if state.get_current_player() == HUMAN_PLAYER {
+                let mut line = String::new();
+                let _ = std::io::stdin().read_line(&mut line).unwrap();
+                let mut split = line.split_whitespace();
+                let row = split.next().unwrap().parse::<usize>().unwrap();
+                let col = split.next().unwrap().parse::<usize>().unwrap();
 
-            let action = tictactoe::Action { row, col };
-            state = state.get_next_state(&action).unwrap();
-        } else {
-            let action_probs = mcts.search(state.clone());
-            println!("{action_probs:?}");
-            let action = action_probs.get_best_action();
-            state = state.get_next_state(&action).unwrap();
-        }
-
-        let (value, is_terminal) = state.get_value_and_terminated();
-        if is_terminal {
-            println!("{state}");
-            if value == 0.0 {
-                println!("Draw");
+                game::tictactoe::Action { row, col }
             } else {
-                let winner = state.get_current_player().get_opposite();
-                println!("Winner: {winner}");
-            }
-            break;
-        }
+                mcts.search(state.clone()).get_best_action()
+            };
+
+        state = state.get_next_state(&action).unwrap();
+
+        match state.get_status() {
+            Status::Completed => {
+                println!("{state}");
+                println!("Winner: {}", state.get_current_player().get_opposite());
+                break;
+            },
+            Status::Tied => {
+                println!("{state}");
+                println!("Draw");
+                break;
+            },
+            Status::Ongoing => ()
+        };
     }
 }
 
 fn main() {
-    set_print_options_short();
+    // set_print_options_short();
 
     // train();
     

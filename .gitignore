@@ -19,3 +19,4 @@ torch
 
 *.pt
 *.safetensors
+*_cp/
