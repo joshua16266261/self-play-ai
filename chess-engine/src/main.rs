@@ -6,8 +6,13 @@ use model::{Model, TicTacToeNet};
 use mcts::{Args, Learner, MCTS};
 use tch::{nn, Device};
 use tch::display::set_print_options_short;
-// use tictactoe::{State, Player, Action};
+use game::{State, Policy};
 use game::tictactoe;
+
+use crate::game::Player;
+// use game::tictactoe;
+
+// TODO: Test new refactored code
 
 fn train() {
     let mut var_store = nn::VarStore::new(Device::Cpu);
@@ -24,7 +29,7 @@ fn train() {
         var_store: &mut var_store
     };
 
-    learner.learn();
+    learner.learn::<tictactoe::State>();
 }
 
 fn play() {
@@ -37,32 +42,33 @@ fn play() {
     let model = Model{ args, net };
     let mut mcts = MCTS{ args, model };
 
-    let mut state = State::default();
+    let mut state = tictactoe::State::default();
 
-    let human_player = Player::O;
+    let human_player = tictactoe::Player::O;
 
     loop {
         println!("{state}");
 
-        if state.current_player == human_player {
+        if state.get_current_player() == human_player {
             let mut line = String::new();
             let _ = std::io::stdin().read_line(&mut line).unwrap();
             let mut split = line.split_whitespace();
             let row = split.next().unwrap().parse::<usize>().unwrap();
             let col = split.next().unwrap().parse::<usize>().unwrap();
 
-            let action = Action { row, col };
+            let action = tictactoe::Action { row, col };
             state = state.get_next_state(&action).unwrap();
         } else {
             let action_probs = mcts.search(state.clone());
             println!("{action_probs:?}");
-            let best_action_idx = action_probs
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.total_cmp(b))
-                .map(|(index, _)| index)
-                .unwrap();
-            let action = Action { row: best_action_idx / 3, col: best_action_idx % 3 };
+            // let best_action_idx = action_probs
+            //     .iter()
+            //     .enumerate()
+            //     .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            //     .map(|(index, _)| index)
+            //     .unwrap();
+            // let action = Action { row: best_action_idx / 3, col: best_action_idx % 3 };
+            let action = action_probs.get_best_action();
             state = state.get_next_state(&action).unwrap();
         }
 
@@ -72,7 +78,8 @@ fn play() {
             if value == 0.0 {
                 println!("Draw");
             } else {
-                let winner = Player::get_opposite_player(&state.current_player);
+                // let winner = tictactoe::Player::get_opposite_player(&state.current_player);
+                let winner = state.get_current_player().get_opposite();
                 println!("Winner: {winner}");
             }
             break;
@@ -83,7 +90,7 @@ fn play() {
 fn main() {
     set_print_options_short();
 
-    // train();
+    train();
     
     play();
 }

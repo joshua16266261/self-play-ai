@@ -7,6 +7,8 @@ use tch::{Tensor, IndexOp, Device, Reduction, nn::{Adam, OptimizerConfig, VarSto
 use tch::nn;
 use indicatif::ProgressBar;
 
+// TODO: Separate Model and TicTacToeNet
+
 pub struct TicTacToeNet {
     torso: SequentialT,
     policy_head: SequentialT,
@@ -86,10 +88,11 @@ impl TicTacToeNet {
 
 impl Model {
     pub fn predict<T: State>(&mut self, state: &T) -> (T::Policy, f32) {
-        let encoded_state = state.encode().get_flat_slice();
-        let valid_actions = state.get_valid_actions();
+        let encoded_state = state.encode();
+        let encoded_state_slice = encoded_state.get_flat_slice();
+        // let valid_actions = state.get_valid_actions();
         
-        let input = Tensor::from_slice(&encoded_state)
+        let input = Tensor::from_slice(&encoded_state_slice)
             // .view(T::Encoding::get_original_shape())
             // .unsqueeze(0)
             .to(Device::Mps);

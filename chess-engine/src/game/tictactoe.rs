@@ -33,8 +33,8 @@ pub struct Action {
 pub type Policy = [f32; 9];
 pub type Encoding = [f32; 27];
 
-impl Player {
-    fn get_opposite_player(&self) -> Self {
+impl super::Player for Player {
+    fn get_opposite(&self) -> Self {
         match self {
             Player::X => Player::O,
             Player::O => Player::X
@@ -116,6 +116,16 @@ impl super::Policy for Policy {
         let idx = dist.sample(rng);
         Action{ row: idx / 3, col: idx % 3}
     }
+
+    fn get_best_action(&self) -> Action {
+        let best_action_idx = self
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(index, _)| index)
+            .unwrap();
+        Action { row: best_action_idx / 3, col: best_action_idx % 3 }
+    }
 }
 
 impl super::State for State {
@@ -134,7 +144,8 @@ impl super::State for State {
                 None => {
                     let mut next_state = self.clone();
                     next_state.board.0[action.row][action.col] = Piece(Some(self.current_player));
-                    next_state.current_player = self.current_player.get_opposite_player();
+                    // next_state.current_player = self.current_player.get_opposite();
+                    next_state.current_player = super::Player::get_opposite(&self.current_player);
                     next_state.num_actions_played += 1;
     
                     let row = &next_state.board.0[action.row];

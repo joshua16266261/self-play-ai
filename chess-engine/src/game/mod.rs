@@ -10,10 +10,14 @@ pub enum Status{
     Completed
 }
 
+pub trait Player: Eq + Copy {
+    fn get_opposite(&self) -> Self;
+}
+
 pub trait State: Default + Clone {
     type Encoding: Encoding;
     type Policy: Policy;
-    type Player: Eq;
+    type Player: Player;
 
     fn get_current_player(&self) -> Self::Player;
     fn get_next_state(&self, action: &<<Self as crate::game::State>::Policy as Policy>::Action) -> Result<Self, String> where Self: std::marker::Sized;
@@ -23,7 +27,7 @@ pub trait State: Default + Clone {
     fn mask_invalid_actions(&self, policy: Vec<f32>) -> Result<Self::Policy, String>;
 }
 
-pub trait Policy: Default {
+pub trait Policy: Default + Copy {
     type Action: Clone;
 
     fn get_prob(&self, action: &Self::Action) -> f32;
@@ -31,6 +35,7 @@ pub trait Policy: Default {
     fn normalize(&mut self);
     fn get_flat_slice(&self) -> &[f32];
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Self::Action;
+    fn get_best_action(&self) -> Self::Action;
 }
 
 pub trait Encoding {
