@@ -1,24 +1,19 @@
-mod tictactoe;
 mod mcts;
 mod model;
+mod game;
+
 use model::{Model, TicTacToeNet};
 use mcts::{Args, Learner, MCTS};
 use tch::{nn, Device};
 use tch::display::set_print_options_short;
-use tictactoe::{State, Player, Action};
+// use tictactoe::{State, Player, Action};
+use game::tictactoe;
 
 fn train() {
     let mut var_store = nn::VarStore::new(Device::Cpu);
-    // let net = tch::TrainableCModule::load("../tictactoe_model.pt", var_store.root()).unwrap();
     let net = TicTacToeNet::new(&var_store.root(), 4, 64);
     var_store.set_device(Device::Mps);
 
-    // let args = Args {
-    //     num_epochs: 10,
-    //     num_learn_iters: 1,
-    //     num_self_play_iters: 1,
-    //     ..Default::default()
-    // };
     let args = Args::default();
     let model = Model{ args, net };
     let mcts = MCTS{ args, model };
@@ -44,10 +39,12 @@ fn play() {
 
     let mut state = State::default();
 
+    let human_player = Player::O;
+
     loop {
         println!("{state}");
 
-        if state.current_player == Player::X {
+        if state.current_player == human_player {
             let mut line = String::new();
             let _ = std::io::stdin().read_line(&mut line).unwrap();
             let mut split = line.split_whitespace();
