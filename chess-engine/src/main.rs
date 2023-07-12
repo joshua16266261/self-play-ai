@@ -3,14 +3,13 @@ mod model;
 mod game;
 
 use model::{Model, TicTacToeNet};
-use mcts::{Args, Learner, MCTS};
+use mcts::{Args, Learner, Mcts};
 use tch::{nn, Device};
 use tch::display::set_print_options_short;
 use game::{State, Policy};
 use game::tictactoe;
 
 use crate::game::Player;
-// use game::tictactoe;
 
 // TODO: Test new refactored code
 
@@ -21,7 +20,7 @@ fn train() {
 
     let args = Args::default();
     let model = Model{ args, net };
-    let mcts = MCTS{ args, model };
+    let mcts = Mcts{ args, model };
 
     let mut learner = Learner{
         args,
@@ -40,7 +39,7 @@ fn play() {
 
     let args = Args::default();
     let model = Model{ args, net };
-    let mut mcts = MCTS{ args, model };
+    let mut mcts = Mcts{ args, model };
 
     let mut state = tictactoe::State::default();
 
@@ -61,13 +60,6 @@ fn play() {
         } else {
             let action_probs = mcts.search(state.clone());
             println!("{action_probs:?}");
-            // let best_action_idx = action_probs
-            //     .iter()
-            //     .enumerate()
-            //     .max_by(|(_, a), (_, b)| a.total_cmp(b))
-            //     .map(|(index, _)| index)
-            //     .unwrap();
-            // let action = Action { row: best_action_idx / 3, col: best_action_idx % 3 };
             let action = action_probs.get_best_action();
             state = state.get_next_state(&action).unwrap();
         }
@@ -78,7 +70,6 @@ fn play() {
             if value == 0.0 {
                 println!("Draw");
             } else {
-                // let winner = tictactoe::Player::get_opposite_player(&state.current_player);
                 let winner = state.get_current_player().get_opposite();
                 println!("Winner: {winner}");
             }
@@ -90,7 +81,7 @@ fn play() {
 fn main() {
     set_print_options_short();
 
-    train();
+    // train();
     
     play();
 }

@@ -75,16 +75,10 @@ impl fmt::Display for Action {
     }
 }
 
-// const ENCODING_SHAPE: [i64; 3] = [3, 3, 3];
-
 impl super::Encoding for Encoding {
     fn get_flat_slice(&self) -> &[f32] {
         self.as_slice()
     }
-
-    // fn get_original_shape() -> &'static [i64] {
-    //     &ENCODING_SHAPE
-    // }
 }
 
 impl super::Policy for Policy {
@@ -104,15 +98,16 @@ impl super::Policy for Policy {
     }
 
     fn get_flat_slice(&self) -> &[f32] {
-        return self
+        self
     }
 
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Action {
+        // Higher temperature => squishes probabilities together => encourages more exploration
         let temperature_action_probs: Vec<f32> = self
             .iter()
             .map(|x| f32::powf(*x, temperature))
             .collect();
-        let dist = WeightedIndex::new(&temperature_action_probs).unwrap();
+        let dist = WeightedIndex::new(temperature_action_probs).unwrap();
         let idx = dist.sample(rng);
         Action{ row: idx / 3, col: idx % 3}
     }
@@ -144,7 +139,6 @@ impl super::State for State {
                 None => {
                     let mut next_state = self.clone();
                     next_state.board.0[action.row][action.col] = Piece(Some(self.current_player));
-                    // next_state.current_player = self.current_player.get_opposite();
                     next_state.current_player = super::Player::get_opposite(&self.current_player);
                     next_state.num_actions_played += 1;
     
@@ -224,16 +218,16 @@ impl super::State for State {
 
         let valid_actions = self.get_valid_actions();
 
-        let mut policy: Policy = [0f32; 9];
+        let mut masked_policy: Policy = [0f32; 9];
         let mut total_prob = 0.0;
         for action in valid_actions {
             let idx = action.row * 3 + action.col;
             let prob = *policy.get(idx).unwrap();
-            policy[idx] = prob;
+            masked_policy[idx] = prob;
             total_prob += prob;
         }
-        policy = policy.map(|x| x / total_prob);
+        masked_policy = masked_policy.map(|x| x / total_prob);
 
-        Ok(policy)
+        Ok(masked_policy)
     }
 }

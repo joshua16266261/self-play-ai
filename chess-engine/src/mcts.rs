@@ -1,4 +1,3 @@
-// use crate::tictactoe::{State, Action, Policy};
 use crate::game::{State, Policy};
 use crate::model::Model;
 use tch::nn::VarStore;
@@ -32,14 +31,14 @@ struct Tree<T: State> {
     arena: Vec<Node<T>>
 }
 
-pub struct MCTS {
+pub struct Mcts {
     pub args: Args,
     pub model: Model
 }
 
 pub struct Learner<'a> {
     pub args: Args,
-    pub mcts: MCTS,
+    pub mcts: Mcts,
     pub var_store: &'a mut VarStore
 }
 
@@ -86,7 +85,6 @@ impl<T: State> Tree<T> {
 
     fn expand(&mut self, parent_id: usize, policy: T::Policy) {
         let arena_len = self.arena.len();
-        // let num_new_nodes = policy.iter().filter(|x| **x > 0.0).count();
         let parent_node = self.arena.get_mut(parent_id).unwrap();
         let num_new_nodes = parent_node.state.get_valid_actions().len();
 
@@ -95,27 +93,6 @@ impl<T: State> Tree<T> {
 
         let parent_state: T = parent_node.state.clone();
         let mut new_id = arena_len;
-        // for row in 0..3 {
-        //     for col in 0..3 {
-        //         let prob = policy[row * 3 + col];
-        //         if prob > 0.0 {
-        //             let action = Action { row, col };
-        //             let next_state = parent_state.get_next_state(&action).unwrap();
-        //             let child_node: Node = Node{
-        //                 state: next_state,
-        //                 id: new_id,
-        //                 parent_id: Some(parent_id),
-        //                 action_taken: Some(action),
-        //                 prior: prob,
-        //                 children_ids: Vec::new(),
-        //                 visit_count: 0,
-        //                 value_sum: 0.0
-        //             };
-        //             self.arena.push(child_node);
-        //             new_id += 1;
-        //         }
-        //     }
-        // };
 
         for action in parent_state.get_valid_actions() {
             let prob = policy.get_prob(&action);
@@ -152,11 +129,10 @@ impl<T: State> Tree<T> {
     }
 }
 
-impl MCTS {
+impl Mcts {
     pub fn search<T: State>(&mut self, state: T) -> T::Policy {
         let (policy, _) = self.model.predict(&state);
 
-        // let root_node_current_player = state.current_player;
         let root_node_id = 0;
         let root_node = Node{
             state,
@@ -202,18 +178,15 @@ impl MCTS {
         };
 
         let mut visit_counts = T::Policy::default();
-        let mut total_visit_count = 0.0;
         let children_ids = &tree.arena.get(root_node_id).unwrap().children_ids;
         for child_id in children_ids {
             let child_node = tree.arena.get(*child_id).unwrap();
             let action = child_node.action_taken.clone().unwrap();
             let child_visit_count = child_node.visit_count as f32;
 
-            // visit_counts[action.row * 3 + action.col] = child_visit_count;
             visit_counts.set_prob(&action, child_visit_count);
-            // total_visit_count += child_visit_count;
         };
-        // visit_counts.map(|x| x / total_visit_count)
+
         visit_counts.normalize();
         visit_counts
     }
@@ -227,22 +200,12 @@ impl Learner<'_> {
         let mut state = T::default();
         let mut rng = rand::thread_rng();
 
-        let a = [0, 1];
-        // let b = a.it
-
         loop {
             state_history.push(state.clone());
             let action_probs = self.mcts.search(state.clone());
             policy_history.push(action_probs);
 
             // Higher temperature => squishes probabilities together => encourages more exploration
-            // let temperature_action_probs: Vec<f32> = action_probs
-            //     .into_iter()
-            //     .map(|x| f32::powf(x, self.args.temperature))
-            //     .collect();
-            // let dist = WeightedIndex::new(&temperature_action_probs).unwrap();
-            // let idx = dist.sample(&mut rng);
-            // let action = Action{ row: idx / 3, col: idx % 3};
             let action = action_probs.sample(&mut rng, self.args.temperature);
             state = state.get_next_state(&action).unwrap();
             let (value, is_terminal) = state.get_value_and_terminated();

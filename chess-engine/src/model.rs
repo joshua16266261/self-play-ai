@@ -92,7 +92,7 @@ impl Model {
         let encoded_state_slice = encoded_state.get_flat_slice();
         // let valid_actions = state.get_valid_actions();
         
-        let input = Tensor::from_slice(&encoded_state_slice)
+        let input = Tensor::from_slice(encoded_state_slice)
             // .view(T::Encoding::get_original_shape())
             // .unsqueeze(0)
             .to(Device::Mps);
@@ -120,30 +120,33 @@ impl Model {
 
         let num_inputs = states.len() as i64;
 
+        // Convert states to tensor of shape (num_inputs, size_of_flatten_state)
         let mut states_flattened: Vec<f32> = Vec::new();
         for state in states {
             states_flattened.extend_from_slice(state.get_flat_slice());
         }
-        let state_tensors = Tensor::from_slice(&states_flattened);
+        let state_tensors = Tensor::from_slice(&states_flattened).view((num_inputs, -1));
 
         // Convert policies to tensor of shape (num_inputs, size_of_policy)
         let mut policies_flattened: Vec<f32> = Vec::new();
         for policy in policies {
             policies_flattened.extend_from_slice(policy.get_flat_slice());
         }
-        let policy_tensors = Tensor::from_slice(&policies_flattened)
-            .view((num_inputs, -1));
+        let policy_tensors = Tensor::from_slice(&policies_flattened).view((num_inputs, -1));
 
         // Convert values to tensor of shape (num_inputs, 1)
-        let mut value_tensors = Tensor::from_slice(&values);
-        value_tensors = value_tensors.view((num_inputs, 1)).to(Device::Mps);
+        let value_tensors = Tensor::from_slice(&values).view((num_inputs, 1)).to(Device::Mps);
 
         pb.reset();
         for _ in 0..args.num_epochs {
             let mut idx = 0;
             let mut loss = 0.0;
+
             for (state_batch, policy_batch) in
-                Iter2::new(&state_tensors, &policy_tensors, args.batch_size).shuffle().to_device(Device::Mps).return_smaller_last_batch() {
+                Iter2::new(&state_tensors, &policy_tensors, args.batch_size)
+                    .shuffle()
+                    .to_device(Device::Mps)
+                    .return_smaller_last_batch() {
 
                 let value_batch = value_tensors.i(idx..min(idx+args.batch_size, num_inputs));
 
