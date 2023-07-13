@@ -92,9 +92,9 @@ impl super::Policy for Policy {
         self[action.row * 3 + action.col] = prob;
     }
 
-    fn normalize(&mut self) {
+    fn get_normalized(&mut self) -> Self {
         let sum: f32 = self.iter().sum();
-        self.map(|x| x / sum);
+        self.map(|x| x / sum)
     }
 
     fn get_flat_slice(&self) -> &[f32] {

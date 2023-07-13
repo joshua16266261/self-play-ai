@@ -28,7 +28,6 @@ pub struct Node<T: State> {
 pub struct Tree<T: State> {
     pub args: Args,
     pub arena: Vec<Node<T>>,
-    pub root_id: usize,
     pub node_id_to_expand: Option<usize>, 
     pub state_history: Vec<T>,
     pub policy_history: Vec<T::Policy>
@@ -80,7 +79,6 @@ impl<T: State> Default for Tree<T> {
         Self {
             args: Args::default(),
             arena: vec![Node::default()],
-            root_id: 0,
             node_id_to_expand: None,
             state_history: Vec::new(),
             policy_history: Vec::new()
@@ -88,9 +86,15 @@ impl<T: State> Default for Tree<T> {
     }
 }
 
+impl<T: State> Node<T> {
+    pub fn create_root_node(state: T) -> Self {
+        Self { state, ..Default::default() }
+    }
+}
+
 impl<T: State> Tree<T> {
     pub fn with_root_state(state: T) -> Self {
-        let root_node = Node { state, ..Default::default() };
+        let root_node = Node::create_root_node(state);
         Self { arena: vec![root_node], ..Default::default() }
     }
 
@@ -168,7 +172,7 @@ impl<T: Net> Mcts<T> {
     pub fn search(&mut self, trees: &mut Vec<Tree<T::State>>) -> Vec<<<T as Net>::State as State>::Policy> {
         let states = trees
             .iter()
-            .map(|x| &x.arena.get(x.root_id).unwrap().state)
+            .map(|x| &x.arena.get(0).unwrap().state)
             .collect();
 
         let (policies, _) = self.model.predict(&states);
@@ -180,14 +184,14 @@ impl<T: Net> Mcts<T> {
 
         for i in 0..trees.len() {
             let tree = &mut trees[i];
-            tree.expand(tree.root_id, policies[i]);
+            tree.expand(0, policies[i]);
         }
 
         for _ in 0..self.args.num_searches {
             let mut trees_to_expand: Vec<&mut Tree<T::State>> = Vec::with_capacity(trees.len());
 
             for tree in &mut *trees {
-                let mut node = tree.arena.get(tree.root_id).unwrap();
+                let mut node = tree.arena.get(0).unwrap();
 
                 while node.is_fully_expanded() {
                     node = tree.arena.get(tree.select(node.id)).unwrap();
@@ -206,7 +210,7 @@ impl<T: Net> Mcts<T> {
             if !trees_to_expand.is_empty() {
                 let states = trees_to_expand
                     .iter()
-                    .map(|x| &x.arena.get(x.root_id).unwrap().state)
+                    .map(|x| &x.arena.get(0).unwrap().state)
                     .collect();
 
                 let (policies, values) = self.model.predict(&states);
@@ -223,7 +227,7 @@ impl<T: Net> Mcts<T> {
         let mut all_visit_counts: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::with_capacity(trees.len());
         for tree in trees {
             let mut visit_counts = <<T as crate::model::Net>::State as State>::Policy::default();
-            let children_ids = &tree.arena.get(tree.root_id).unwrap().children_ids;
+            let children_ids = &tree.arena.get(0).unwrap().children_ids;
             for child_id in children_ids {
                 let child_node = tree.arena.get(*child_id).unwrap();
                 let action = child_node.action_taken.clone().unwrap();
@@ -232,71 +236,10 @@ impl<T: Net> Mcts<T> {
                 visit_counts.set_prob(&action, child_visit_count);
             };
 
-            visit_counts.normalize();
+            visit_counts = visit_counts.get_normalized();
             all_visit_counts.push(visit_counts);
         }
 
         all_visit_counts
     }
-
-    // pub fn search(&mut self, state: T::State) -> <<T as crate::model::Net>::State as State>::Policy {
-    //     let (policy, _) = self.model.predict(&state);
-
-    //     let root_node_id = 0;
-    //     let root_node = Node{
-    //         state,
-    //         id: root_node_id,
-    //         parent_id: None,
-    //         action_taken: None,
-    //         prior: 0.0,
-    //         children_ids: Vec::new(),
-    //         visit_count: 1,
-    //         value_sum: 0.0
-    //     };
-
-    //     let mut tree = Tree{
-    //         args: self.args,
-    //         arena: vec![root_node]
-    //     };
-
-    //     // TODO: Add Dirichlet noise
-    //     // let dirichlet = Dirichlet::new(&[1.0, 2.0, 3.0]).unwrap();
-    //     // let mut rng = rand::thread_rng();
-    //     // let samples = dirichlet.sample(&mut rng);
-
-    //     tree.expand(root_node_id, policy);
-
-    //     for _ in 0..self.args.num_searches {
-    //         let mut node = tree.arena.get(root_node_id).unwrap();
-
-    //         while node.is_fully_expanded() {
-    //             node = tree.arena.get(tree.select(node.id)).unwrap();
-    //         }
-
-    //         let (mut value, is_terminal) = node.state.get_value_and_terminated();
-            
-    //         let node_id = node.id;
-
-    //         if !is_terminal {
-    //             let (policy_pred, value_pred) = self.model.predict(&node.state);
-    //             value = value_pred;
-    //             tree.expand(node_id, policy_pred);
-    //         }
-            
-    //         tree.backprop(node_id, value);
-    //     };
-
-    //     let mut visit_counts = <<T as crate::model::Net>::State as State>::Policy::default();
-    //     let children_ids = &tree.arena.get(root_node_id).unwrap().children_ids;
-    //     for child_id in children_ids {
-    //         let child_node = tree.arena.get(*child_id).unwrap();
-    //         let action = child_node.action_taken.clone().unwrap();
-    //         let child_visit_count = child_node.visit_count as f32;
-
-    //         visit_counts.set_prob(&action, child_visit_count);
-    //     };
-
-    //     visit_counts.normalize();
-    //     visit_counts
-    // }
 }

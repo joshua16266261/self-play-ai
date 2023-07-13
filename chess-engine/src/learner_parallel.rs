@@ -36,7 +36,7 @@ impl<T: Net> Learner<'_, T> {
                 let tree = trees.get_mut(i).unwrap();
                 let action_probs = *all_action_probs.get(i).unwrap();
 
-                let root_state = tree.arena.get(tree.root_id).unwrap().state.clone();
+                let root_state = tree.arena.get(0).unwrap().state.clone();
 
                 // Higher temperature => squishes probabilities together => encourages more exploration
                 let action = action_probs.sample(&mut rng, self.args.temperature);
@@ -65,9 +65,11 @@ impl<T: Net> Learner<'_, T> {
                         .collect()
                     );
 
-                    trees.pop();
+                    trees.remove(i);
                 } else {
-                    trees[i] = Tree::with_root_state(state);
+                    // Next search starts from new sampled state
+                    tree.arena = vec![Node::create_root_node(state)];
+                    tree.node_id_to_expand = None;
                 }
             }
         }

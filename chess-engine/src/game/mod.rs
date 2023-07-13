@@ -34,7 +34,7 @@ pub trait Policy: Default + Copy {
 
     fn get_prob(&self, action: &Self::Action) -> f32;
     fn set_prob(&mut self, action: &Self::Action, prob: f32);
-    fn normalize(&mut self);
+    fn get_normalized(&mut self) -> Self;
     fn get_flat_slice(&self) -> &[f32];
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Self::Action;
     fn get_best_action(&self) -> Self::Action;

@@ -25,7 +25,7 @@ fn train() {
     );
     var_store.set_device(Device::Mps);
 
-    let args = Args::default();
+    let args = Args { num_self_play_iters: 10, num_parallel_self_play_games: 10, ..Default::default() };
     let model = Model{ args, net };
     let mcts = Mcts{ args, model };
 
