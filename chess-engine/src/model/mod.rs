@@ -46,7 +46,7 @@ impl<T: Net> Model<T> {
     //     (masked_policy, value_float)
     // }
 
-    pub fn predict(&mut self, states: &Vec<&T::State>) -> (Vec<<<T as crate::model::Net>::State as State>::Policy>, Vec<f32>) {
+    pub fn predict(&self, states: &Vec<&T::State>) -> (Vec<<<T as crate::model::Net>::State as State>::Policy>, Vec<f32>) {
         let mut all_encoded_states: Vec<f32> = Vec::new();
         for state in states {
             all_encoded_states.extend_from_slice(state.encode().get_flat_slice());
@@ -71,7 +71,7 @@ impl<T: Net> Model<T> {
     }
 
     pub fn train(
-        &mut self,
+        &self,
         states: Vec<<<T as crate::model::Net>::State as State>::Encoding>,
         policies: Vec<<<T as crate::model::Net>::State as State>::Policy>,
         values: Vec<f32>,

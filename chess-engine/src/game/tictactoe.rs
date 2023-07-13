@@ -92,7 +92,7 @@ impl super::Policy for Policy {
         self[action.row * 3 + action.col] = prob;
     }
 
-    fn get_normalized(&mut self) -> Self {
+    fn get_normalized(&self) -> Self {
         let sum: f32 = self.iter().sum();
         self.map(|x| x / sum)
     }

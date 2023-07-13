@@ -1,7 +1,5 @@
-// mod mcts;
 mod model;
 mod game;
-// mod learner;
 mod mcts_parallel;
 mod learner_parallel;
 

@@ -1,5 +1,9 @@
-use crate::game::{State, Policy, Encoding};
+use std::iter::zip;
+
+use crate::game::{State, Policy};
 use crate::model::{Net, Model};
+
+use rayon::prelude::*;
 // use rand_distr::Dirichlet;
 
 #[derive(Clone, Copy)]
@@ -169,7 +173,7 @@ impl<T: State> Tree<T> {
 }
 
 impl<T: Net> Mcts<T> {
-    pub fn search(&mut self, trees: &mut Vec<Tree<T::State>>) -> Vec<<<T as Net>::State as State>::Policy> {
+    pub fn search(&self, trees: &mut Vec<Tree<T::State>>) -> Vec<<<T as Net>::State as State>::Policy> {
         let states = trees
             .iter()
             .map(|x| &x.arena.get(0).unwrap().state)
@@ -186,6 +190,17 @@ impl<T: Net> Mcts<T> {
             let tree = &mut trees[i];
             tree.expand(0, policies[i]);
         }
+
+
+        let mut xs: Vec<_> = (1..4).collect();
+        let mut ys: Vec<_> = (-4..-1).collect();
+        let mut zs = vec![0; 3];
+
+        // Mutably reference each input separately with `IntoParallelIterator`:
+        (&mut xs, &mut ys, &mut zs).into_par_iter().for_each(|(x, y, z)| {
+            *z += *x + *y;
+            std::mem::swap(x, y);
+        });
 
         for _ in 0..self.args.num_searches {
             let mut trees_to_expand: Vec<&mut Tree<T::State>> = Vec::with_capacity(trees.len());

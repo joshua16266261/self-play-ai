@@ -2,6 +2,7 @@ use crate::game::{State, Policy};
 use crate::model::Net;
 use crate::mcts_parallel::{Args, Mcts, Node, Tree};
 
+// use rayon::prelude::*;
 use tch::nn::VarStore;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::create_dir;
@@ -14,7 +15,7 @@ pub struct Learner<'a, T: Net> {
 
 impl<T: Net> Learner<'_, T> {
     #[allow(clippy::type_complexity)]
-    fn self_play(&mut self) -> (
+    fn self_play(&self) -> (
         Vec<<<T as crate::model::Net>::State as State>::Encoding>,
         Vec<<<T as crate::model::Net>::State as State>::Policy>,
         Vec<f32>
@@ -77,7 +78,7 @@ impl<T: Net> Learner<'_, T> {
         (state_history, policy_history, value_history)
     }
 
-    pub fn learn(&mut self, checkpoint_dir: &str) {
+    pub fn learn(&self, checkpoint_dir: &str) {
         let _ = create_dir(checkpoint_dir);
 
         // Progress bars
@@ -122,6 +123,8 @@ impl<T: Net> Learner<'_, T> {
 
                 self_play_pb.inc(1);
             }
+
+            // (0..self.args.num_self_play_iters).into_par_iter().map(|_| self.self_play())
 
             self_play_pb.reset();
 

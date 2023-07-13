@@ -14,7 +14,7 @@ pub trait Player: Eq + Copy {
     fn get_opposite(&self) -> Self;
 }
 
-pub trait State: Default + Clone {
+pub trait State: Default + Clone + Sync {
     type Encoding: Encoding;
     type Policy: Policy;
     type Player: Player;
@@ -29,12 +29,12 @@ pub trait State: Default + Clone {
     fn mask_invalid_actions(&self, policy: Vec<f32>) -> Result<Self::Policy, String>;
 }
 
-pub trait Policy: Default + Copy {
-    type Action: Clone;
+pub trait Policy: Default + Copy + Sync {
+    type Action: Clone + Sync;
 
     fn get_prob(&self, action: &Self::Action) -> f32;
     fn set_prob(&mut self, action: &Self::Action, prob: f32);
-    fn get_normalized(&mut self) -> Self;
+    fn get_normalized(&self) -> Self;
     fn get_flat_slice(&self) -> &[f32];
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Self::Action;
     fn get_best_action(&self) -> Self::Action;
