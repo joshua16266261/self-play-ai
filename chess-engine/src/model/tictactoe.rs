@@ -2,8 +2,6 @@ use crate::game::tictactoe;
 use tch::{Tensor, nn::{SequentialT, ModuleT}};
 use tch::nn;
 
-// TODO: Separate Model and TicTacToeNet
-
 pub struct Net {
     torso: SequentialT,
     policy_head: SequentialT,

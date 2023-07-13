@@ -1,15 +1,15 @@
 mod mcts;
 mod model;
 mod game;
+mod learner;
 
 use model::{Model};
-use mcts::{Args, Learner, Mcts};
+use mcts::{Args, Mcts};
+use learner::Learner;
 use tch::{nn::VarStore, Device};
 use game::{State, Policy, Status};
 
 use crate::game::Player;
-
-// TODO: Test new refactored code
 
 static CHECKPOINT_DIR: &str = "tictactoe_cp";
 static HUMAN_PLAYER: game::tictactoe::Player = game::tictactoe::Player::O;
