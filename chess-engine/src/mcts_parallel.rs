@@ -9,28 +9,29 @@ pub struct Args {
     pub temperature: f32,
     pub num_learn_iters: u32,
     pub num_self_play_iters: u32,
+    pub num_parallel_self_play_games: usize,
     pub batch_size: i64,
     pub num_epochs: u32
 }
 
-struct Node<T: State> {
-    state: T,
+pub struct Node<T: State> {
+    pub state: T,
     id: usize,
     parent_id: Option<usize>,
     action_taken: Option<<<T as State>::Policy as Policy>::Action>,
-    prior: f32,
+    prior: Option<f32>,
     children_ids: Vec<usize>,
     visit_count: u32,
     value_sum: f32
 }
 
-struct Tree<T: State> {
-    args: Args,
-    arena: Vec<Node<T>>,
-    root_id: usize,
-    node_id_to_expand: Option<usize>, 
-    state_history: Vec<T>,
-    policy_history: Vec<T::Policy>
+pub struct Tree<T: State> {
+    pub args: Args,
+    pub arena: Vec<Node<T>>,
+    pub root_id: usize,
+    pub node_id_to_expand: Option<usize>, 
+    pub state_history: Vec<T>,
+    pub policy_history: Vec<T::Policy>
 }
 
 pub struct Mcts<T: Net> {
@@ -46,6 +47,7 @@ impl Default for Args {
             temperature: 1.25,
             num_learn_iters: 3,
             num_self_play_iters: 500,
+            num_parallel_self_play_games: 1,
             batch_size: 64,
             num_epochs: 4
         }
@@ -58,7 +60,40 @@ impl<T: State> Node<T> {
     }
 }
 
+impl<T: State> Default for Node<T> {
+    fn default() -> Self {
+        Self {
+            state: T::default(),
+            id: 0,
+            parent_id: None,
+            action_taken: None,
+            prior: None,
+            children_ids: Vec::new(),
+            visit_count: 1,
+            value_sum: 0.0
+        }
+    }
+}
+
+impl<T: State> Default for Tree<T> {
+    fn default() -> Self { 
+        Self {
+            args: Args::default(),
+            arena: vec![Node::default()],
+            root_id: 0,
+            node_id_to_expand: None,
+            state_history: Vec::new(),
+            policy_history: Vec::new()
+        }
+    }
+}
+
 impl<T: State> Tree<T> {
+    pub fn with_root_state(state: T) -> Self {
+        let root_node = Node { state, ..Default::default() };
+        Self { arena: vec![root_node], ..Default::default() }
+    }
+
     fn get_ucb(&self, parent_id: usize, child_id: usize) -> f32 {
         let parent_node = self.arena.get(parent_id).unwrap();
         let child_node = self.arena.get(child_id).unwrap();
@@ -66,7 +101,7 @@ impl<T: State> Tree<T> {
             0 => 0.0,
             _ => (-child_node.value_sum / (child_node.visit_count as f32) + 1.0) / 2.0
         };
-        q + self.args.c * child_node.prior * (parent_node.visit_count as f32).sqrt() / (1.0 + (child_node.visit_count as f32))
+        q + self.args.c * child_node.prior.unwrap() * (parent_node.visit_count as f32).sqrt() / (1.0 + (child_node.visit_count as f32))
     }
 
     fn select(&self, parent_id: usize) -> usize {
@@ -102,7 +137,7 @@ impl<T: State> Tree<T> {
                 id: new_id,
                 parent_id: Some(parent_id),
                 action_taken: Some(action),
-                prior: prob,
+                prior: Some(prob),
                 children_ids: Vec::new(),
                 visit_count: 0,
                 value_sum: 0.0
@@ -130,13 +165,13 @@ impl<T: State> Tree<T> {
 }
 
 impl<T: Net> Mcts<T> {
-    pub fn search(&mut self, trees: Vec<&Tree<T::State>>) -> Vec<<<T as Net>::State as State>::Policy> {
+    pub fn search(&mut self, trees: &mut Vec<Tree<T::State>>) -> Vec<<<T as Net>::State as State>::Policy> {
         let states = trees
             .iter()
             .map(|x| &x.arena.get(x.root_id).unwrap().state)
             .collect();
 
-        let (policies, _) = self.model.predict(states);
+        let (policies, _) = self.model.predict(&states);
 
         // TODO: Add Dirichlet noise
         // let dirichlet = Dirichlet::new(&[1.0, 2.0, 3.0]).unwrap();
@@ -144,21 +179,21 @@ impl<T: Net> Mcts<T> {
         // let samples = dirichlet.sample(&mut rng);
 
         for i in 0..trees.len() {
-            let tree = trees[i];
+            let tree = &mut trees[i];
             tree.expand(tree.root_id, policies[i]);
         }
 
         for _ in 0..self.args.num_searches {
-            let mut trees_to_expand: Vec<&Tree<T::State>> = Vec::with_capacity(trees.len());
+            let mut trees_to_expand: Vec<&mut Tree<T::State>> = Vec::with_capacity(trees.len());
 
-            for tree in trees {
+            for tree in &mut *trees {
                 let mut node = tree.arena.get(tree.root_id).unwrap();
 
                 while node.is_fully_expanded() {
                     node = tree.arena.get(tree.select(node.id)).unwrap();
                 }
 
-                let (mut value, is_terminal) = node.state.get_value_and_terminated();
+                let (value, is_terminal) = node.state.get_value_and_terminated();
 
                 if is_terminal {
                     tree.backprop(node.id, value);
@@ -174,10 +209,10 @@ impl<T: Net> Mcts<T> {
                     .map(|x| &x.arena.get(x.root_id).unwrap().state)
                     .collect();
 
-                let (policies, values) = self.model.predict(states);
+                let (policies, values) = self.model.predict(&states);
 
-                for i in 0..trees_to_expand.len() {
-                    let tree = trees_to_expand.get(i).unwrap();
+                for (i, tree) in trees_to_expand.iter_mut().enumerate() {
+                    // let tree = trees_to_expand.get(i).unwrap();
                     let node_id = tree.node_id_to_expand.unwrap();
                     tree.expand(node_id, *policies.get(i).unwrap());
                     tree.backprop(node_id, *values.get(i).unwrap());

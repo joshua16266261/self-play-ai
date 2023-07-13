@@ -1,13 +1,13 @@
-mod mcts;
+// mod mcts;
 mod model;
 mod game;
-mod learner;
+// mod learner;
 mod mcts_parallel;
 mod learner_parallel;
 
 use model::{Model};
-use mcts::{Args, Mcts};
-use learner::Learner;
+use mcts_parallel::{Args, Tree, Mcts};
+use learner_parallel::Learner;
 use tch::{nn::VarStore, Device};
 use game::{State, Policy, Status};
 
@@ -63,7 +63,7 @@ fn play() {
 
                 game::tictactoe::Action { row, col }
             } else {
-                mcts.search(state.clone()).get_best_action()
+                mcts.search(&mut vec![Tree::with_root_state(state.clone())])[0].get_best_action()
             };
 
         state = state.get_next_state(&action).unwrap();

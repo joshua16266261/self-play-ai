@@ -1,6 +1,6 @@
 use crate::game::{State, Policy};
 use crate::model::Net;
-use crate::mcts::{Args, Mcts};
+use crate::mcts_parallel::{Args, Mcts, Node, Tree};
 
 use tch::nn::VarStore;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -19,27 +19,40 @@ impl<T: Net> Learner<'_, T> {
         Vec<<<T as crate::model::Net>::State as State>::Policy>,
         Vec<f32>
     ) {
-        let mut state_history: Vec<T::State> = Vec::new();
+        let mut state_history: Vec<<<T as crate::model::Net>::State as State>::Encoding> = Vec::new();
         let mut policy_history: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::new();
+        let mut value_history: Vec<f32> = Vec::new();
 
-        let mut state = T::State::default();
+        let mut trees: Vec<Tree<T::State>> = (0..self.args.num_parallel_self_play_games)
+            .map(|_| Tree::<T::State>::default())
+            .collect();
+
         let mut rng = rand::thread_rng();
 
-        loop {
-            state_history.push(state.clone());
-            let action_probs = self.mcts.search(state.clone());
-            policy_history.push(action_probs);
+        while !trees.is_empty() {
+            let all_action_probs = self.mcts.search(&mut trees);
 
-            // Higher temperature => squishes probabilities together => encourages more exploration
-            let action = action_probs.sample(&mut rng, self.args.temperature);
-            state = state.get_next_state(&action).unwrap();
-            let (value, is_terminal) = state.get_value_and_terminated();
+            for i in (0..trees.len()).rev() {
+                let tree = trees.get_mut(i).unwrap();
+                let action_probs = *all_action_probs.get(i).unwrap();
 
-            if is_terminal {
-                return (
-                    state_history.iter().map(|x| x.encode()).collect(),
-                    policy_history,
-                    state_history
+                let root_state = tree.arena.get(tree.root_id).unwrap().state.clone();
+
+                // Higher temperature => squishes probabilities together => encourages more exploration
+                let action = action_probs.sample(&mut rng, self.args.temperature);
+                let state = root_state.get_next_state(&action).unwrap();
+
+                tree.state_history.push(root_state);
+                tree.policy_history.push(action_probs);
+
+                let (value, is_terminal) = state.get_value_and_terminated();
+                if is_terminal {
+                    state_history.append(
+                        &mut tree.state_history.iter().map(|x| x.encode()).collect()
+                    );
+                    policy_history.append(&mut tree.policy_history);
+                    value_history.append(
+                        &mut tree.state_history
                         .iter()
                         .map(
                             |x|
@@ -50,9 +63,16 @@ impl<T: Net> Learner<'_, T> {
                                 }
                         )
                         .collect()
-                );
+                    );
+
+                    trees.pop();
+                } else {
+                    trees[i] = Tree::with_root_state(state);
+                }
             }
         }
+
+        (state_history, policy_history, value_history)
     }
 
     pub fn learn(&mut self, checkpoint_dir: &str) {

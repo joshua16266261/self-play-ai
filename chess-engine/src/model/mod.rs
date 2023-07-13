@@ -11,10 +11,11 @@ use tch::{
     nn::{VarStore, Adam, OptimizerConfig, SequentialT, FuncT}
 };
 use indicatif::ProgressBar;
-use std::{cmp::min, os::macos::raw::stat};
+use std::cmp::min;
 
 use crate::game::{Policy, State, Encoding};
-use crate::mcts::Args;
+// use crate::mcts::Args;
+use crate::mcts_parallel::Args;
 
 pub trait Net {
     type State: State;
@@ -45,7 +46,7 @@ impl<T: Net> Model<T> {
     //     (masked_policy, value_float)
     // }
 
-    pub fn predict(&mut self, states: Vec<&T::State>) -> (Vec<<<T as crate::model::Net>::State as State>::Policy>, Vec<f32>) {
+    pub fn predict(&mut self, states: &Vec<&T::State>) -> (Vec<<<T as crate::model::Net>::State as State>::Policy>, Vec<f32>) {
         let mut all_encoded_states: Vec<f32> = Vec::new();
         for state in states {
             all_encoded_states.extend_from_slice(state.encode().get_flat_slice());
