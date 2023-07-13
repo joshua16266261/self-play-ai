@@ -2,6 +2,8 @@ mod mcts;
 mod model;
 mod game;
 mod learner;
+mod mcts_parallel;
+mod learner_parallel;
 
 use model::{Model};
 use mcts::{Args, Mcts};
@@ -85,7 +87,7 @@ fn play() {
 fn main() {
     // set_print_options_short();
 
-    // train();
+    train();
     
     play();
 }

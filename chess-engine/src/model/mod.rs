@@ -11,7 +11,7 @@ use tch::{
     nn::{VarStore, Adam, OptimizerConfig, SequentialT, FuncT}
 };
 use indicatif::ProgressBar;
-use std::cmp::min;
+use std::{cmp::min, os::macos::raw::stat};
 
 use crate::game::{Policy, State, Encoding};
 use crate::mcts::Args;
@@ -28,21 +28,45 @@ pub struct Model<T: Net> {
 }
 
 impl<T: Net> Model<T> {
-    pub fn predict(&mut self, state: &T::State) -> (<<T as crate::model::Net>::State as State>::Policy, f32) {
-        let encoded_state = state.encode();
-        let encoded_state_slice = encoded_state.get_flat_slice();
+    // pub fn predict(&mut self, state: &T::State) -> (<<T as crate::model::Net>::State as State>::Policy, f32) {
+    //     let encoded_state = state.encode();
+    //     let encoded_state_slice = encoded_state.get_flat_slice();
         
-        let input = Tensor::from_slice(encoded_state_slice)
-            .to(Device::Mps);
-        let (mut policy, value) = self.net.forward(&input, false);
-        policy = policy.softmax(-1, Kind::Float);
+    //     let input = Tensor::from_slice(encoded_state_slice)
+    //         .to(Device::Mps);
+    //     let (mut policy, value) = self.net.forward(&input, false);
+    //     policy = policy.softmax(-1, Kind::Float);
 
-        let policy_vec = Vec::<f32>::try_from(policy.contiguous().view(-1)).unwrap();
-        let value_float = value.double_value(&[0]) as f32;
+    //     let policy_vec = Vec::<f32>::try_from(policy.contiguous().view(-1)).unwrap();
+    //     let value_float = value.double_value(&[0]) as f32;
 
-        let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
+    //     let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
 
-        (masked_policy, value_float)
+    //     (masked_policy, value_float)
+    // }
+
+    pub fn predict(&mut self, states: Vec<&T::State>) -> (Vec<<<T as crate::model::Net>::State as State>::Policy>, Vec<f32>) {
+        let mut all_encoded_states: Vec<f32> = Vec::new();
+        for state in states {
+            all_encoded_states.extend_from_slice(state.encode().get_flat_slice());
+        }
+        
+        let input = Tensor::from_slice(&all_encoded_states).to(Device::Mps);
+        let (mut policy_tensor, value_tensor) = self.net.forward(&input, false);
+        policy_tensor = policy_tensor.softmax(-1, Kind::Float);
+
+        let mut policies: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::with_capacity(states.len());
+        for i in 0..states.len() {
+            let state = states.get(i).unwrap();
+            let policy_vec = Vec::<f32>::try_from(policy_tensor.i((i as i64, ..)).contiguous().view(-1)).unwrap();
+            let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
+            policies.push(masked_policy);
+        }
+        // let value_float = value.double_value(&[0]) as f32;
+
+        let values = Vec::<f32>::try_from(value_tensor.contiguous().view(-1)).unwrap();
+
+        (policies, values)
     }
 
     pub fn train(
