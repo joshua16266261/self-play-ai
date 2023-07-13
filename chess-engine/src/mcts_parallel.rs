@@ -1,10 +1,8 @@
-use std::iter::zip;
-
 use crate::game::{State, Policy};
 use crate::model::{Net, Model};
 
-use rayon::prelude::*;
 // use rand_distr::Dirichlet;
+use rayon::prelude::*;
 
 #[derive(Clone, Copy)]
 pub struct Args {
@@ -113,6 +111,7 @@ impl<T: State> Tree<T> {
     }
 
     fn select(&self, parent_id: usize) -> usize {
+        // TODO: Parallelize
         let parent_node = self.arena.get(parent_id).unwrap();
         let node_comparison = |a: &&usize, b: &&usize|
             self.get_ucb(parent_id, **a)
@@ -163,6 +162,8 @@ impl<T: State> Tree<T> {
         node.value_sum += sign * value;
         sign *= -1.0;
 
+        // TODO: If we include a depth field to the Node struct,
+        // then this might be parallelizable
         while let Some(parent_id) = node.parent_id {
             node = self.arena.get_mut(parent_id).unwrap();
             node.visit_count += 1;
@@ -175,7 +176,7 @@ impl<T: State> Tree<T> {
 impl<T: Net> Mcts<T> {
     pub fn search(&self, trees: &mut Vec<Tree<T::State>>) -> Vec<<<T as Net>::State as State>::Policy> {
         let states = trees
-            .iter()
+            .par_iter_mut()
             .map(|x| &x.arena.get(0).unwrap().state)
             .collect();
 
@@ -186,75 +187,69 @@ impl<T: Net> Mcts<T> {
         // let mut rng = rand::thread_rng();
         // let samples = dirichlet.sample(&mut rng);
 
-        for i in 0..trees.len() {
-            let tree = &mut trees[i];
-            tree.expand(0, policies[i]);
-        }
-
-
-        let mut xs: Vec<_> = (1..4).collect();
-        let mut ys: Vec<_> = (-4..-1).collect();
-        let mut zs = vec![0; 3];
-
-        // Mutably reference each input separately with `IntoParallelIterator`:
-        (&mut xs, &mut ys, &mut zs).into_par_iter().for_each(|(x, y, z)| {
-            *z += *x + *y;
-            std::mem::swap(x, y);
-        });
+        trees.par_iter_mut().zip(policies)
+            .for_each(|(tree, policy)|
+                tree.expand(0, policy)
+            );
 
         for _ in 0..self.args.num_searches {
-            let mut trees_to_expand: Vec<&mut Tree<T::State>> = Vec::with_capacity(trees.len());
+            let mut trees_to_expand: Vec<&mut Tree<T::State>> = trees
+                .par_iter_mut()
+                .update(|tree| {
+                    let mut node = tree.arena.get(0).unwrap();
 
-            for tree in &mut *trees {
-                let mut node = tree.arena.get(0).unwrap();
+                    while node.is_fully_expanded() {
+                        node = tree.arena.get(tree.select(node.id)).unwrap();
+                    }
 
-                while node.is_fully_expanded() {
-                    node = tree.arena.get(tree.select(node.id)).unwrap();
-                }
+                    let (value, is_terminal) = node.state.get_value_and_terminated();
 
-                let (value, is_terminal) = node.state.get_value_and_terminated();
-
-                if is_terminal {
-                    tree.backprop(node.id, value);
-                } else {
-                    tree.node_id_to_expand = Some(node.id);
-                    trees_to_expand.push(tree);
-                }
-            }
+                    if is_terminal {
+                        tree.backprop(node.id, value);
+                        tree.node_id_to_expand = None;
+                    } else {
+                        tree.node_id_to_expand = Some(node.id);
+                    }
+                })
+                .filter(|tree| tree.node_id_to_expand.is_some())
+                .collect();
             
             if !trees_to_expand.is_empty() {
                 let states = trees_to_expand
-                    .iter()
-                    .map(|x| &x.arena.get(0).unwrap().state)
+                    .par_iter_mut()
+                    .map(|tree|
+                        &tree.arena.get(tree.node_id_to_expand.unwrap()).unwrap().state
+                    )
                     .collect();
 
                 let (policies, values) = self.model.predict(&states);
 
-                for (i, tree) in trees_to_expand.iter_mut().enumerate() {
-                    // let tree = trees_to_expand.get(i).unwrap();
-                    let node_id = tree.node_id_to_expand.unwrap();
-                    tree.expand(node_id, *policies.get(i).unwrap());
-                    tree.backprop(node_id, *values.get(i).unwrap());
-                }
+                (trees_to_expand, policies, values).into_par_iter()
+                    .for_each(
+                        |(tree, policy, value)| {
+                            let node_id = tree.node_id_to_expand.unwrap();
+                            tree.expand(node_id, policy);
+                            tree.backprop(node_id, value);
+                        }
+                    );
             }
         };
 
-        let mut all_visit_counts: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::with_capacity(trees.len());
-        for tree in trees {
-            let mut visit_counts = <<T as crate::model::Net>::State as State>::Policy::default();
-            let children_ids = &tree.arena.get(0).unwrap().children_ids;
-            for child_id in children_ids {
-                let child_node = tree.arena.get(*child_id).unwrap();
-                let action = child_node.action_taken.clone().unwrap();
-                let child_visit_count = child_node.visit_count as f32;
+        trees
+            .par_iter_mut()
+            .map(|tree| {
+                let mut visit_counts = <<T as crate::model::Net>::State as State>::Policy::default();
+                let children_ids = &tree.arena.get(0).unwrap().children_ids;
+                for child_id in children_ids {
+                    let child_node = tree.arena.get(*child_id).unwrap();
+                    let action = child_node.action_taken.clone().unwrap();
+                    let child_visit_count = child_node.visit_count as f32;
 
-                visit_counts.set_prob(&action, child_visit_count);
-            };
+                    visit_counts.set_prob(&action, child_visit_count);
+                }
 
-            visit_counts = visit_counts.get_normalized();
-            all_visit_counts.push(visit_counts);
-        }
-
-        all_visit_counts
+                visit_counts.get_normalized()
+            })
+            .collect()
     }
 }

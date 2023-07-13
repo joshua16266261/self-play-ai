@@ -14,14 +14,14 @@ pub trait Player: Eq + Copy {
     fn get_opposite(&self) -> Self;
 }
 
-pub trait State: Default + Clone + Sync {
+pub trait State: Default + Clone + Send + Sync {
     type Encoding: Encoding;
     type Policy: Policy;
     type Player: Player;
 
     fn get_current_player(&self) -> Self::Player;
-    fn get_next_state(&self, action: &<<Self as crate::game::State>::Policy as Policy>::Action) ->
-        Result<Self, String> where Self: std::marker::Sized;
+    fn get_next_state(&self, action: &<<Self as crate::game::State>::Policy as Policy>::Action) -> Result<Self, String>;
+        // Result<Self, String> where Self: std::marker::Sized;
     fn get_valid_actions(&self) -> Vec<<<Self as crate::game::State>::Policy as Policy>::Action>;
     fn get_status(&self) -> Status;
     fn get_value_and_terminated(&self) -> (f32, bool);
@@ -29,8 +29,8 @@ pub trait State: Default + Clone + Sync {
     fn mask_invalid_actions(&self, policy: Vec<f32>) -> Result<Self::Policy, String>;
 }
 
-pub trait Policy: Default + Copy + Sync {
-    type Action: Clone + Sync;
+pub trait Policy: Default + Copy + Send {
+    type Action: Clone + Send;
 
     fn get_prob(&self, action: &Self::Action) -> f32;
     fn set_prob(&mut self, action: &Self::Action, prob: f32);
@@ -40,6 +40,6 @@ pub trait Policy: Default + Copy + Sync {
     fn get_best_action(&self) -> Self::Action;
 }
 
-pub trait Encoding {
+pub trait Encoding: Send {
     fn get_flat_slice(&self) -> &[f32];
 }

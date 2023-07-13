@@ -23,11 +23,12 @@ fn train() {
     );
     var_store.set_device(Device::Mps);
 
-    let args = Args { num_self_play_iters: 10, num_parallel_self_play_games: 10, ..Default::default() };
+    let args = Args { num_self_play_iters: 10, num_parallel_self_play_games: 50, ..Default::default() };
+    // let args = Args { num_self_play_iters: 1, num_parallel_self_play_games: 500, ..Default::default() };
     let model = Model{ args, net };
     let mcts = Mcts{ args, model };
 
-    let mut learner = Learner{
+    let learner = Learner{
         args,
         mcts,
         var_store: &mut var_store
@@ -44,7 +45,7 @@ fn play() {
 
     let args = Args::default();
     let model = Model{ args, net };
-    let mut mcts = Mcts{ args, model };
+    let mcts = Mcts{ args, model };
 
     let mut state = game::tictactoe::State::default();
 
@@ -83,8 +84,6 @@ fn play() {
 }
 
 fn main() {
-    // set_print_options_short();
-
     train();
     
     play();

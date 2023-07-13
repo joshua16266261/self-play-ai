@@ -2,7 +2,6 @@ use crate::game::{State, Policy};
 use crate::model::Net;
 use crate::mcts_parallel::{Args, Mcts, Node, Tree};
 
-// use rayon::prelude::*;
 use tch::nn::VarStore;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::create_dir;
@@ -33,6 +32,7 @@ impl<T: Net> Learner<'_, T> {
         while !trees.is_empty() {
             let all_action_probs = self.mcts.search(&mut trees);
 
+            // TODO: Might be able to parallelize
             for i in (0..trees.len()).rev() {
                 let tree = trees.get_mut(i).unwrap();
                 let action_probs = *all_action_probs.get(i).unwrap();
@@ -109,7 +109,12 @@ impl<T: Net> Learner<'_, T> {
             let mut policy_memory: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::new();
             let mut value_memory: Vec<f32> = Vec::new();
 
-            // TODO: Parallelize
+            // TODO: Is there a reason to not always use num_self_play_iters = 1 and use parallelized self_play for everything?
+            // My guess is when you call self_play() with a large number of parallel self_play games, the function has to
+            // wait for all the games to finish before returning, so if one game takes especially long, then the function
+            // as a whole takes a long time
+            // But if each game takes roughly the same number of moves (like tic tac toe)
+            // then it should be faster to run all the games in parallel
             for _ in 0..self.args.num_self_play_iters {
                 let (
                     mut states,
@@ -123,8 +128,6 @@ impl<T: Net> Learner<'_, T> {
 
                 self_play_pb.inc(1);
             }
-
-            // (0..self.args.num_self_play_iters).into_par_iter().map(|_| self.self_play())
 
             self_play_pb.reset();
 
