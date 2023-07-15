@@ -20,3 +20,5 @@ torch
 *.pt
 *.safetensors
 *_cp/
+
+profile.json

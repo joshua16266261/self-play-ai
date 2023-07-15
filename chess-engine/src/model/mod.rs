@@ -186,11 +186,12 @@ impl<T: Net> Model<T> {
             //         .return_smaller_last_batch() {
 
             for batch_idx in 0..num_batches {
-                let last_idx = min(batch_idx+args.batch_size, num_inputs);
+                let start_idx = batch_idx * args.batch_size;
+                let end_idx = min(start_idx + args.batch_size, num_inputs);
 
-                let state_batch = states.i(batch_idx..last_idx);
-                let policy_batch = policies.i(batch_idx..last_idx);
-                let value_batch = values.i(batch_idx..last_idx);
+                let state_batch = states.i(start_idx..end_idx);
+                let policy_batch = policies.i(start_idx..end_idx);
+                let value_batch = values.i(start_idx..end_idx);
 
                 let (policy, value) = self.net.forward(&state_batch, true);
 

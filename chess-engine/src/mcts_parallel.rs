@@ -46,7 +46,7 @@ impl Default for Args {
     fn default() -> Self {
         Args {
             c: 2.0,
-            num_searches: 60,
+            num_searches: 1000,
             temperature: 1.25,
             num_learn_iters: 3,
             num_self_play_iters: 500,
@@ -107,6 +107,8 @@ impl<T: State> Tree<T> {
         let child_node = self.arena.get(child_id).unwrap();
         let q = match child_node.visit_count {
             0 => 0.0,
+            // 0 => 0.5, // TODO: Is this correct?
+            // 0 => 0.9,
             _ => (-child_node.value_sum / (child_node.visit_count as f32) + 1.0) / 2.0
         };
         q + self.args.c * child_node.prior.unwrap() * (parent_node.visit_count as f32).sqrt() / (1.0 + (child_node.visit_count as f32))

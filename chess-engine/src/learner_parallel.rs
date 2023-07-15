@@ -2,7 +2,7 @@ use crate::game::{State, Policy};
 use crate::model::Net;
 use crate::mcts_parallel::{Args, Mcts, Node, Tree};
 
-use ndarray::{Array4, Array2, Array3, Array1, Array, stack, Axis, ArrayView3, ArrayView1};
+use ndarray::{Array3, Array1, Array, stack, Axis, ArrayView3, ArrayView1};
 use rayon::prelude::*;
 use rayon::iter::repeatn;
 use tch::{Tensor, Device, nn::VarStore};

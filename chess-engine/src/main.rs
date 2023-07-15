@@ -12,7 +12,7 @@ use game::{State, Policy, Status};
 use crate::game::Player;
 
 static CHECKPOINT_DIR: &str = "tictactoe_cp";
-static HUMAN_PLAYER: game::tictactoe::Player = game::tictactoe::Player::O;
+static HUMAN_PLAYER: game::tictactoe::Player = game::tictactoe::Player::X;
 
 fn train() {
     let mut var_store = VarStore::new(Device::Cpu);
@@ -23,7 +23,12 @@ fn train() {
     );
     var_store.set_device(Device::Mps);
 
-    let args = Args { num_self_play_iters: 10, num_parallel_self_play_games: 50, ..Default::default() };
+    let args = Args {
+        // num_searches: 60,
+        num_self_play_iters: 10,
+        num_parallel_self_play_games: 50, 
+        ..Default::default()
+    };
     // let args = Args { num_self_play_iters: 2, num_parallel_self_play_games: 2, ..Default::default() };
     // let args = Args { num_self_play_iters: 1, num_parallel_self_play_games: 500, ..Default::default() };
     let model = Model{ args, net };
@@ -85,7 +90,7 @@ fn play() {
 }
 
 fn main() {
-    // train();
+    train();
     
     play();
 }

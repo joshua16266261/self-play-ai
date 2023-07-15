@@ -3,7 +3,6 @@ use rand::distributions::WeightedIndex;
 use rand::rngs::ThreadRng;
 use rand::prelude::*;
 use ndarray::{Array, Array1, Array2, Array3, ArrayView1, stack, Axis};
-use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 #[derive(Clone, Copy, Debug, strum_macros::Display, Default, PartialEq, Eq)]
 pub enum Player {
