@@ -2,6 +2,8 @@ use std::fmt;
 use rand::distributions::WeightedIndex;
 use rand::rngs::ThreadRng;
 use rand::prelude::*;
+use ndarray::{Array, Array1, Array2, Array3, ArrayView1, stack, Axis};
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 #[derive(Clone, Copy, Debug, strum_macros::Display, Default, PartialEq, Eq)]
 pub enum Player {
@@ -30,8 +32,9 @@ pub struct Action {
     pub col: usize
 }
 
-pub type Policy = [f32; 9];
-pub type Encoding = [f32; 27];
+// pub type Policy = [f32; 9];
+#[derive(Clone)]
+pub struct Policy(Array2<f32>);
 
 impl super::Player for Player {
     fn get_opposite(&self) -> Self {
@@ -75,9 +78,15 @@ impl fmt::Display for Action {
     }
 }
 
-impl super::Encoding for Encoding {
-    fn get_flat_slice(&self) -> &[f32] {
-        self.as_slice()
+// impl Into<Array1<f32>> for Policy {
+//     fn into(self) -> Array1<f32> {
+//         self.0.into_shape((9,)).unwrap()
+//     }
+// }
+
+impl Default for Policy {
+    fn default() -> Self {
+        Self(Array::zeros((3, 3)))
     }
 }
 
@@ -85,25 +94,26 @@ impl super::Policy for Policy {
     type Action = Action;
 
     fn get_prob(&self, action: &Action) -> f32 {
-        self[action.row * 3 + action.col]
+        self.0[[action.row, action.col]]
     }
 
     fn set_prob(&mut self, action: &Action, prob: f32) {
-        self[action.row * 3 + action.col] = prob;
+        self.0[[action.row, action.col]] = prob;
     }
 
-    fn get_normalized(&self) -> Self {
-        let sum: f32 = self.iter().sum();
-        self.map(|x| x / sum)
+    fn normalize(&mut self) {
+        // let sum: f32 = self.0.iter().sum();
+        // self.0.map(|x| x / sum)
+        self.0 /= self.0.sum();
     }
 
-    fn get_flat_slice(&self) -> &[f32] {
-        self
+    fn get_flat_ndarray(&self) -> Array1<f32> {
+        self.0.clone().into_shape((9,)).unwrap()
     }
 
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Action {
         // Higher temperature => squishes probabilities together => encourages more exploration
-        let temperature_action_probs: Vec<f32> = self
+        let temperature_action_probs: Vec<f32> = self.0
             .iter()
             .map(|x| f32::powf(*x, temperature))
             .collect();
@@ -113,7 +123,7 @@ impl super::Policy for Policy {
     }
 
     fn get_best_action(&self) -> Action {
-        let best_action_idx = self
+        let best_action_idx = self.0
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.total_cmp(b))
@@ -121,10 +131,19 @@ impl super::Policy for Policy {
             .unwrap();
         Action { row: best_action_idx / 3, col: best_action_idx % 3 }
     }
+
+    // fn to_ndarray(policies: Vec<Self>) -> Vec<Array<f32>> {
+    //     let policies = policies
+    //         .par_iter()
+    //         .map(|policy| policy.0.to_shape((9,)).unwrap().view())
+    //         .collect::<Vec<_>>()
+    //         .as_slice();
+
+    //     stack(Axis(0), policies).unwrap()
+    // }
 }
 
 impl super::State for State {
-    type Encoding = Encoding;
     type Policy = Policy;
     type Player = Player;
 
@@ -196,42 +215,55 @@ impl super::State for State {
         }
     }
 
-    fn encode(&self) -> Encoding {
-        let mut encoding: Encoding = [0.0; 27];
+    fn get_encoding(&self) -> Array3<f32> {
+        let mut encoding = Array3::zeros((3, 3, 3));
         for row in 0..3 {
             for col in 0..3 {
                 match &self.board.0[row][col].0 {
                     Some(player) => {
                         if *player == self.current_player {
-                            encoding[row * 3 + col] = 1.0;
+                            encoding[[0, row, col]] = 1.0;
                         } else {
-                            encoding[9 + row * 3 + col] = 1.0;
+                            encoding[[1, row, col]] = 1.0;
                         }
                     },
-                    None => encoding[18 + row * 3 + col] = 1.0
+                    None => encoding[[2, row, col]] = 1.0
                 };
             }
         }
         encoding
     }
 
-    fn mask_invalid_actions(&self, policy: Vec<f32>) -> Result<Policy, String> {
-        if policy.len() != 9 {
-            return Err(format!("Expected policy length to be 9, found {}", policy.len()));
+    fn mask_invalid_actions(&self, policy: ArrayView1<f32>) -> Result<Policy, String> {
+        if policy.shape() != [9,] {
+            return Err(format!("Expected policy shape to be (9,), found {:?}", policy.shape()));
         }
+
+        let policy = policy.into_shape((3, 3)).unwrap();
 
         let valid_actions = self.get_valid_actions();
 
-        let mut masked_policy: Policy = [0f32; 9];
-        let mut total_prob = 0.0;
+        // let mut mask = Array::<f32, _>::ones((3, 3));
+        let mut mask = Array::zeros((3, 3));
         for action in valid_actions {
-            let idx = action.row * 3 + action.col;
-            let prob = *policy.get(idx).unwrap();
-            masked_policy[idx] = prob;
-            total_prob += prob;
+            mask[[action.row, action.col]] = 1.0;
         }
-        masked_policy = masked_policy.map(|x| x / total_prob);
 
-        Ok(masked_policy)
+        let mut masked_policy = &policy * &mask;
+        masked_policy /= masked_policy.sum();
+
+        Ok(Policy(masked_policy))
+
+        // let mut masked_policy: Policy = Array1::;
+        // let mut total_prob = 0.0;
+        // for action in valid_actions {
+        //     let idx = action.row * 3 + action.col;
+        //     let prob = *policy.get(idx).unwrap();
+        //     masked_policy[idx] = prob;
+        //     total_prob += prob;
+        // }
+        // masked_policy = masked_policy.map(|x| x / total_prob);
+
+        // Ok(masked_policy)
     }
 }

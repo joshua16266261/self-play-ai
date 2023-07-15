@@ -12,8 +12,10 @@ use tch::{
 };
 use indicatif::ProgressBar;
 use std::cmp::min;
+use ndarray::{stack, Axis, ArrayView, Ix3, Array2, ArrayD, Array1, Array4};
+use rayon::prelude::*;
 
-use crate::game::{Policy, State, Encoding};
+use crate::game::{Policy, State};
 // use crate::mcts::Args;
 use crate::mcts_parallel::Args;
 
@@ -29,41 +31,102 @@ pub struct Model<T: Net> {
 }
 
 impl<T: Net> Model<T> {
-    // pub fn predict(&mut self, state: &T::State) -> (<<T as crate::model::Net>::State as State>::Policy, f32) {
-    //     let encoded_state = state.encode();
-    //     let encoded_state_slice = encoded_state.get_flat_slice();
-        
-    //     let input = Tensor::from_slice(encoded_state_slice)
-    //         .to(Device::Mps);
-    //     let (mut policy, value) = self.net.forward(&input, false);
-    //     policy = policy.softmax(-1, Kind::Float);
-
-    //     let policy_vec = Vec::<f32>::try_from(policy.contiguous().view(-1)).unwrap();
-    //     let value_float = value.double_value(&[0]) as f32;
-
-    //     let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
-
-    //     (masked_policy, value_float)
-    // }
-
     pub fn predict(&self, states: &Vec<&T::State>) -> (Vec<<<T as crate::model::Net>::State as State>::Policy>, Vec<f32>) {
-        let mut all_encoded_states: Vec<f32> = Vec::new();
-        for state in states {
-            all_encoded_states.extend_from_slice(state.encode().get_flat_slice());
-        }
-        
-        let input = Tensor::from_slice(&all_encoded_states).to(Device::Mps);
+        // TODO: Parallelize
+        // let mut all_encoded_states: Vec<f32> = Vec::new();
+        // for state in states {
+        //     all_encoded_states.extend_from_slice(state.get_encoding().get_flat_slice());
+        // }
+
+        // let all_encoded_states = states
+        //     .par_iter()
+        //     .fold(
+        //         Vec::new,
+        //         |mut acc: Vec<f32>, x| {
+        //             acc.extend_from_slice(x.encode().get_flat_slice());
+        //             acc
+        //         }
+        //     )
+        //     .reduce(
+        //         Vec::new,
+        //         |mut acc, mut x| {
+        //             acc.append(&mut x);
+        //             acc
+        //         }, 
+        //     );
+
+        // let a = states
+        //     .iter()
+        //     .map(|state| state.get_encoding().view())
+        //     .collect::<Vec<_>>()
+        //     .as_slice();
+
+        let encoded_states = states
+            .par_iter()
+            .map(|state| state.get_encoding())
+            .collect::<Vec<_>>();
+
+        let encoded_state_views = encoded_states
+            .par_iter()
+            .map(|state| state.view());
+
+        let encoded_states_ndarray = stack(
+            Axis(0),
+            encoded_state_views
+                .collect::<Vec<_>>()
+                .as_slice()
+        ).unwrap();
+
+        // let encoded_states = stack(
+        //     Axis(0),
+        //     states
+        //         .iter()
+        //         .map(|state| state.get_encoding().view())
+        //         .collect::<Vec<_>>()
+        //         .as_slice()
+        // ).unwrap();
+
+        let input = Tensor::try_from(encoded_states_ndarray).unwrap().to(Device::Mps);
+        // println!("{}", input.to(Device::Cpu));
+        // println!("{}", Tensor::from_slice(&[1, 2, 3, 4, 5, 6]));
+        // let input = Tensor::from_slice(&all_encoded_states).to(Device::Mps);
+
         let (mut policy_tensor, value_tensor) = self.net.forward(&input, false);
         policy_tensor = policy_tensor.softmax(-1, Kind::Float);
+        let policy_tensor_shape = policy_tensor.size2().unwrap();
 
+        // println!("{}", policy_tensor.to(Device::Cpu));
+
+        let policy_ndarray: ArrayD<f32> = (&policy_tensor).try_into().unwrap();
+        let policy_ndarray = policy_ndarray.into_shape((policy_tensor_shape.0 as usize, policy_tensor_shape.1 as usize)).unwrap();
+
+        // TODO: Parallelize
         let mut policies: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::with_capacity(states.len());
         for i in 0..states.len() {
             let state = states.get(i).unwrap();
-            let policy_vec = Vec::<f32>::try_from(policy_tensor.i((i as i64, ..)).contiguous().view(-1)).unwrap();
-            let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
+
+            // let policy_vec = Vec::<f32>::try_from(policy_tensor.i((i as i64, ..)).contiguous().view(-1)).unwrap();
+            // let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
+            let policy = policy_ndarray.index_axis(Axis(0), i);
+            
+            let masked_policy = state.mask_invalid_actions(policy).unwrap();
             policies.push(masked_policy);
         }
-        // let value_float = value.double_value(&[0]) as f32;
+
+        // let policy_vec = Vec::<f32>::try_from(policy_tensor.contiguous().view(-1)).unwrap();
+
+        // let a = states
+        //     .par_iter()
+        //     .enumerate()
+        //     .fold(
+        //         Vec::new,
+        //         |mut acc, (i, state)| {
+        //             let policy_vec = Vec::<f32>::try_from(policy_tensor.i((i as i64, ..)).contiguous().view(-1)).unwrap();
+        //             let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
+        //             acc.push(masked_policy);
+        //             acc
+        //         }
+        //     );
 
         let values = Vec::<f32>::try_from(value_tensor.contiguous().view(-1)).unwrap();
 
@@ -72,46 +135,62 @@ impl<T: Net> Model<T> {
 
     pub fn train(
         &self,
-        states: Vec<<<T as crate::model::Net>::State as State>::Encoding>,
-        policies: Vec<<<T as crate::model::Net>::State as State>::Policy>,
-        values: Vec<f32>,
+        states: Tensor,
+        policies: Tensor,
+        values: Tensor,
         var_store: &VarStore,
         args: Args,
         pb: &ProgressBar) {
 
         let mut optimizer = Adam::default().build(var_store, 1e-3).unwrap();
 
-        let num_inputs = states.len() as i64;
+        let num_inputs = states.size()[0];
+        let num_batches = (num_inputs as f32 / self.args.batch_size as f32).ceil() as i64;
+        let index = Tensor::randperm(num_inputs, (Kind::Int64, Device::Mps));
+        
+        let states = states.index_select(0, &index);
+        let policies = policies.index_select(0, &index);
+        let values = values.index_select(0, &index);
 
         // Convert states to tensor of shape (num_inputs, size_of_flatten_state)
-        let mut states_flattened: Vec<f32> = Vec::new();
-        for state in states {
-            states_flattened.extend_from_slice(state.get_flat_slice());
-        }
-        let state_tensors = Tensor::from_slice(&states_flattened).view((num_inputs, -1));
+        // let mut states_flattened: Vec<f32> = Vec::new();
+        // for state in encoded_states {
+        //     states_flattened.extend_from_slice(state.get_flat_slice());
+        // }
+        // let state_tensors = Tensor::from_slice(&states_flattened).view((num_inputs, -1));
+
+        // let state_tensors = Tensor::try_from(encoded_states).unwrap().to(Device::Mps);
 
         // Convert policies to tensor of shape (num_inputs, size_of_policy)
-        let mut policies_flattened: Vec<f32> = Vec::new();
-        for policy in policies {
-            policies_flattened.extend_from_slice(policy.get_flat_slice());
-        }
-        let policy_tensors = Tensor::from_slice(&policies_flattened).view((num_inputs, -1));
+        // let mut policies_flattened: Vec<f32> = Vec::new();
+        // for policy in policies {
+        //     policies_flattened.extend_from_slice(policy.get_flat_slice());
+        // }
+        // let policy_tensors = Tensor::from_slice(&policies_flattened).view((num_inputs, -1));
+
+        // let policy_tensors = Tensor::try_from(policies).unwrap().to(Device::Mps);
 
         // Convert values to tensor of shape (num_inputs, 1)
-        let value_tensors = Tensor::from_slice(&values).view((num_inputs, 1)).to(Device::Mps);
+
+        // let value_tensors = Tensor::from_slice(&values).view((num_inputs, 1)).to(Device::Mps);
 
         pb.reset();
+
         for _ in 0..args.num_epochs {
-            let mut idx = 0;
             let mut loss = 0.0;
 
-            for (state_batch, policy_batch) in
-                Iter2::new(&state_tensors, &policy_tensors, args.batch_size)
-                    .shuffle()
-                    .to_device(Device::Mps)
-                    .return_smaller_last_batch() {
+            // for (state_batch, policy_batch) in
+            //     Iter2::new(&states, &policies, args.batch_size)
+            //         .shuffle()
+            //         .to_device(Device::Mps)
+            //         .return_smaller_last_batch() {
 
-                let value_batch = value_tensors.i(idx..min(idx+args.batch_size, num_inputs));
+            for batch_idx in 0..num_batches {
+                let last_idx = min(batch_idx+args.batch_size, num_inputs);
+
+                let state_batch = states.i(batch_idx..last_idx);
+                let policy_batch = policies.i(batch_idx..last_idx);
+                let value_batch = values.i(batch_idx..last_idx);
 
                 let (policy, value) = self.net.forward(&state_batch, true);
 
@@ -124,7 +203,6 @@ impl<T: Net> Model<T> {
 
                 optimizer.backward_step(&total_loss);
 
-                idx += args.batch_size;
                 loss = total_loss.double_value(&[]);
             }
             pb.set_message(format!("Loss: {:.3}", loss));

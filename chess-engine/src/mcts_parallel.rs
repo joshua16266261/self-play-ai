@@ -16,6 +16,7 @@ pub struct Args {
     pub num_epochs: u32
 }
 
+#[derive(Clone)]
 pub struct Node<T: State> {
     pub state: T,
     id: usize,
@@ -27,6 +28,7 @@ pub struct Node<T: State> {
     value_sum: f32
 }
 
+#[derive(Clone)]
 pub struct Tree<T: State> {
     pub args: Args,
     pub arena: Vec<Node<T>>,
@@ -180,6 +182,7 @@ impl<T: Net> Mcts<T> {
             .map(|x| &x.arena.get(0).unwrap().state)
             .collect();
 
+        // TODO: After changing Model to be consistent, change states to be a vector of encodings
         let (policies, _) = self.model.predict(&states);
 
         // TODO: Add Dirichlet noise
@@ -193,24 +196,53 @@ impl<T: Net> Mcts<T> {
             );
 
         for _ in 0..self.args.num_searches {
+            // let mut trees_to_expand: Vec<&mut Tree<T::State>> = trees
+            //     .par_iter_mut()
+            //     .update(|tree| {
+            //         let mut node = tree.arena.get(0).unwrap();
+
+            //         while node.is_fully_expanded() {
+            //             node = tree.arena.get(tree.select(node.id)).unwrap();
+            //         }
+
+            //         let (value, is_terminal) = node.state.get_value_and_terminated();
+
+            //         if is_terminal {
+            //             tree.backprop(node.id, value);
+            //             tree.node_id_to_expand = None;
+            //         } else {
+            //             tree.node_id_to_expand = Some(node.id);
+            //         }
+            //     })
+            //     .filter(|tree| tree.node_id_to_expand.is_some())
+            //     .collect();
+
+            for tree in trees.iter_mut() {
+                let mut node = tree.arena.get(0).unwrap();
+
+                while node.is_fully_expanded() {
+                    node = tree.arena.get(tree.select(node.id)).unwrap();
+                }
+
+                let (value, is_terminal) = node.state.get_value_and_terminated();
+
+                if is_terminal {
+                    tree.backprop(node.id, value);
+                    tree.node_id_to_expand = None;
+                } else {
+                    tree.node_id_to_expand = Some(node.id);
+                }
+            }
+
             let mut trees_to_expand: Vec<&mut Tree<T::State>> = trees
-                .par_iter_mut()
-                .update(|tree| {
-                    let mut node = tree.arena.get(0).unwrap();
-
-                    while node.is_fully_expanded() {
-                        node = tree.arena.get(tree.select(node.id)).unwrap();
-                    }
-
-                    let (value, is_terminal) = node.state.get_value_and_terminated();
-
-                    if is_terminal {
-                        tree.backprop(node.id, value);
-                        tree.node_id_to_expand = None;
-                    } else {
-                        tree.node_id_to_expand = Some(node.id);
-                    }
-                })
+                .iter_mut()
+                // .filter_map(|tree| {
+                //     if tree.node_id_to_expand.is_some() {
+                //         Some(tree)
+                //     } else {
+                //         None
+                //     }
+                // })
                 .filter(|tree| tree.node_id_to_expand.is_some())
                 .collect();
             
@@ -248,7 +280,8 @@ impl<T: Net> Mcts<T> {
                     visit_counts.set_prob(&action, child_visit_count);
                 }
 
-                visit_counts.get_normalized()
+                visit_counts.normalize();
+                visit_counts
             })
             .collect()
     }

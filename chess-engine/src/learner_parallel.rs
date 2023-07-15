@@ -2,7 +2,10 @@ use crate::game::{State, Policy};
 use crate::model::Net;
 use crate::mcts_parallel::{Args, Mcts, Node, Tree};
 
-use tch::nn::VarStore;
+use ndarray::{Array4, Array2, Array3, Array1, Array, stack, Axis, ArrayView3, ArrayView1};
+use rayon::prelude::*;
+use rayon::iter::repeatn;
+use tch::{Tensor, Device, nn::VarStore};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::create_dir;
 
@@ -15,29 +18,36 @@ pub struct Learner<'a, T: Net> {
 impl<T: Net> Learner<'_, T> {
     #[allow(clippy::type_complexity)]
     fn self_play(&self) -> (
-        Vec<<<T as crate::model::Net>::State as State>::Encoding>,
-        Vec<<<T as crate::model::Net>::State as State>::Policy>,
+        Vec<Array3<f32>>,
+        Vec<Array1<f32>>,
         Vec<f32>
     ) {
-        let mut state_history: Vec<<<T as crate::model::Net>::State as State>::Encoding> = Vec::new();
-        let mut policy_history: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::new();
+
+        let mut state_history: Vec<Array3<f32>> = Vec::new();
+        let mut policy_history: Vec<Array1<f32>> = Vec::new();
         let mut value_history: Vec<f32> = Vec::new();
 
-        let mut trees: Vec<Tree<T::State>> = (0..self.args.num_parallel_self_play_games)
-            .map(|_| Tree::<T::State>::default())
-            .collect();
+        let mut trees: Vec<Tree<T::State>> = repeatn(Tree::<T::State>::default(), self.args.num_parallel_self_play_games).collect();
 
         let mut rng = rand::thread_rng();
 
         while !trees.is_empty() {
-            let all_action_probs = self.mcts.search(&mut trees);
+            let mut all_action_probs = self.mcts.search(&mut trees);
+            // let all_action_probs = Policy::to_ndarray(self.mcts.search(&mut trees));
 
             // TODO: Might be able to parallelize
+            // Handle removal with filter function
             for i in (0..trees.len()).rev() {
-                let tree = trees.get_mut(i).unwrap();
-                let action_probs = *all_action_probs.get(i).unwrap();
+                // TODO: Use map_with to map terminal trees to their state, policy, and value histories
+                // Non-terminal trees will be mapped to zero-capacity vectors
+                // and the trees themselves will be a sent to a receiver to be collected and used for the next iteration
+                // The result of map_with will be flattened and collected
 
+                let tree = trees.get_mut(i).unwrap();
                 let root_state = tree.arena.get(0).unwrap().state.clone();
+
+                // let action_probs = *all_action_probs.get(i).unwrap();
+                let action_probs = all_action_probs.pop().unwrap();
 
                 // Higher temperature => squishes probabilities together => encourages more exploration
                 let action = action_probs.sample(&mut rng, self.args.temperature);
@@ -49,21 +59,30 @@ impl<T: Net> Learner<'_, T> {
                 let (value, is_terminal) = state.get_value_and_terminated();
                 if is_terminal {
                     state_history.append(
-                        &mut tree.state_history.iter().map(|x| x.encode()).collect()
+                        &mut tree.state_history
+                            .par_iter()
+                            .map(|x| x.get_encoding())
+                            .collect()
                     );
-                    policy_history.append(&mut tree.policy_history);
+                    // policy_history.append(&mut tree.policy_history);
+                    policy_history.append(
+                        &mut tree.policy_history
+                            .par_iter_mut()
+                            .map(|policy| policy.get_flat_ndarray())
+                            .collect()
+                    );
                     value_history.append(
                         &mut tree.state_history
-                        .iter()
-                        .map(
-                            |x|
-                                if x.get_current_player() == state.get_current_player() {
-                                    value
-                                } else {
-                                    -value
-                                }
-                        )
-                        .collect()
+                            .par_iter()
+                            .map(
+                                |x|
+                                    if x.get_current_player() == state.get_current_player() {
+                                        value
+                                    } else {
+                                        -value
+                                    }
+                            )
+                            .collect()
                     );
 
                     trees.remove(i);
@@ -105,8 +124,12 @@ impl<T: Net> Learner<'_, T> {
 
         // Actual logic
         for i in 0..self.args.num_learn_iters {
-            let mut state_memory: Vec<<<T as crate::model::Net>::State as State>::Encoding> = Vec::new();
-            let mut policy_memory: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::new();
+            // let mut state_memory: Vec<<<T as crate::model::Net>::State as State>::Encoding> = Vec::new();
+            // let mut policy_memory: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::new();
+            // let mut value_memory: Vec<f32> = Vec::new();
+
+            let mut state_memory: Vec<Array3<f32>> = Vec::new();
+            let mut policy_memory: Vec<Array1<f32>> = Vec::new();
             let mut value_memory: Vec<f32> = Vec::new();
 
             // TODO: Is there a reason to not always use num_self_play_iters = 1 and use parallelized self_play for everything?
@@ -115,6 +138,8 @@ impl<T: Net> Learner<'_, T> {
             // as a whole takes a long time
             // But if each game takes roughly the same number of moves (like tic tac toe)
             // then it should be faster to run all the games in parallel
+            // 
+            // Parallelize this and see if theres a benefit
             for _ in 0..self.args.num_self_play_iters {
                 let (
                     mut states,
@@ -128,8 +153,29 @@ impl<T: Net> Learner<'_, T> {
 
                 self_play_pb.inc(1);
             }
-
             self_play_pb.reset();
+
+            let state_memory_views: Vec<ArrayView3<f32>> = state_memory
+                .iter()
+                .map(|x| x.view())
+                .collect();
+
+            let policy_memory_views: Vec<ArrayView1<f32>> = policy_memory
+                .iter()
+                .map(|x| x.view())
+                .collect();
+
+            let state_memory = Tensor::try_from(
+                stack(Axis(0), state_memory_views.as_slice()).unwrap()
+            ).unwrap().to(Device::Mps);
+
+            let policy_memory = Tensor::try_from(
+                stack(Axis(0), policy_memory_views.as_slice()).unwrap()
+            ).unwrap().to(Device::Mps);
+
+            let value_memory = Tensor::try_from(
+                Array::from_vec(value_memory)
+            ).unwrap().view((-1, 1)).to(Device::Mps);
 
             self.mcts.model.train(
                 state_memory, 

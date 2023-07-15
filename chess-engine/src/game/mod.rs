@@ -1,6 +1,7 @@
 pub mod tictactoe;
 
 use rand::rngs::ThreadRng;
+use ndarray::{Array1, Array3, ArrayView, ArrayView1, Array2};
 
 #[derive(Copy, Clone, Debug, strum_macros::Display, Default, PartialEq, Eq)]
 pub enum Status{
@@ -15,7 +16,6 @@ pub trait Player: Eq + Copy {
 }
 
 pub trait State: Default + Clone + Send + Sync {
-    type Encoding: Encoding;
     type Policy: Policy;
     type Player: Player;
 
@@ -25,21 +25,19 @@ pub trait State: Default + Clone + Send + Sync {
     fn get_valid_actions(&self) -> Vec<<<Self as crate::game::State>::Policy as Policy>::Action>;
     fn get_status(&self) -> Status;
     fn get_value_and_terminated(&self) -> (f32, bool);
-    fn encode(&self) -> Self::Encoding;
-    fn mask_invalid_actions(&self, policy: Vec<f32>) -> Result<Self::Policy, String>;
+    fn get_encoding(&self) -> Array3<f32>;
+    fn mask_invalid_actions(&self, policy: ArrayView1<f32>) -> Result<Self::Policy, String>;
 }
 
-pub trait Policy: Default + Copy + Send {
+pub trait Policy: Default + Send + Clone {
     type Action: Clone + Send;
 
     fn get_prob(&self, action: &Self::Action) -> f32;
     fn set_prob(&mut self, action: &Self::Action, prob: f32);
-    fn get_normalized(&self) -> Self;
-    fn get_flat_slice(&self) -> &[f32];
+    fn normalize(&mut self);
+    fn get_flat_ndarray(&self) -> Array1<f32>;
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Self::Action;
     fn get_best_action(&self) -> Self::Action;
-}
 
-pub trait Encoding: Send {
-    fn get_flat_slice(&self) -> &[f32];
+    // fn to_ndarrays(policies: Vec<Self>) -> Vec<Array1<f32>>;
 }
