@@ -108,7 +108,6 @@ impl<T: State> Tree<T> {
         let q = match child_node.visit_count {
             0 => 0.0,
             // 0 => 0.5, // TODO: Is this correct?
-            // 0 => 0.9,
             _ => (-child_node.value_sum / (child_node.visit_count as f32) + 1.0) / 2.0
         };
         q + self.args.c * child_node.prior.unwrap() * (parent_node.visit_count as f32).sqrt() / (1.0 + (child_node.visit_count as f32))
@@ -184,7 +183,6 @@ impl<T: Net> Mcts<T> {
             .map(|x| &x.arena.get(0).unwrap().state)
             .collect();
 
-        // TODO: After changing Model to be consistent, change states to be a vector of encodings
         let (policies, _) = self.model.predict(&states);
 
         // TODO: Add Dirichlet noise
@@ -198,53 +196,24 @@ impl<T: Net> Mcts<T> {
             );
 
         for _ in 0..self.args.num_searches {
-            // let mut trees_to_expand: Vec<&mut Tree<T::State>> = trees
-            //     .par_iter_mut()
-            //     .update(|tree| {
-            //         let mut node = tree.arena.get(0).unwrap();
-
-            //         while node.is_fully_expanded() {
-            //             node = tree.arena.get(tree.select(node.id)).unwrap();
-            //         }
-
-            //         let (value, is_terminal) = node.state.get_value_and_terminated();
-
-            //         if is_terminal {
-            //             tree.backprop(node.id, value);
-            //             tree.node_id_to_expand = None;
-            //         } else {
-            //             tree.node_id_to_expand = Some(node.id);
-            //         }
-            //     })
-            //     .filter(|tree| tree.node_id_to_expand.is_some())
-            //     .collect();
-
-            for tree in trees.iter_mut() {
-                let mut node = tree.arena.get(0).unwrap();
-
-                while node.is_fully_expanded() {
-                    node = tree.arena.get(tree.select(node.id)).unwrap();
-                }
-
-                let (value, is_terminal) = node.state.get_value_and_terminated();
-
-                if is_terminal {
-                    tree.backprop(node.id, value);
-                    tree.node_id_to_expand = None;
-                } else {
-                    tree.node_id_to_expand = Some(node.id);
-                }
-            }
-
             let mut trees_to_expand: Vec<&mut Tree<T::State>> = trees
-                .iter_mut()
-                // .filter_map(|tree| {
-                //     if tree.node_id_to_expand.is_some() {
-                //         Some(tree)
-                //     } else {
-                //         None
-                //     }
-                // })
+                .par_iter_mut()
+                .update(|tree| {
+                    let mut node = tree.arena.get(0).unwrap();
+
+                    while node.is_fully_expanded() {
+                        node = tree.arena.get(tree.select(node.id)).unwrap();
+                    }
+
+                    let (value, is_terminal) = node.state.get_value_and_terminated();
+
+                    if is_terminal {
+                        tree.backprop(node.id, value);
+                        tree.node_id_to_expand = None;
+                    } else {
+                        tree.node_id_to_expand = Some(node.id);
+                    }
+                })
                 .filter(|tree| tree.node_id_to_expand.is_some())
                 .collect();
             

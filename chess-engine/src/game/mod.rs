@@ -1,7 +1,7 @@
 pub mod tictactoe;
 
 use rand::rngs::ThreadRng;
-use ndarray::{Array1, Array3, ArrayView, ArrayView1, Array2};
+use ndarray::{Array1, Array3, ArrayView1};
 
 #[derive(Copy, Clone, Debug, strum_macros::Display, Default, PartialEq, Eq)]
 pub enum Status{
@@ -21,7 +21,6 @@ pub trait State: Default + Clone + Send + Sync {
 
     fn get_current_player(&self) -> Self::Player;
     fn get_next_state(&self, action: &<<Self as crate::game::State>::Policy as Policy>::Action) -> Result<Self, String>;
-        // Result<Self, String> where Self: std::marker::Sized;
     fn get_valid_actions(&self) -> Vec<<<Self as crate::game::State>::Policy as Policy>::Action>;
     fn get_status(&self) -> Status;
     fn get_value_and_terminated(&self) -> (f32, bool);
@@ -38,6 +37,4 @@ pub trait Policy: Default + Send + Clone {
     fn get_flat_ndarray(&self) -> Array1<f32>;
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Self::Action;
     fn get_best_action(&self) -> Self::Action;
-
-    // fn to_ndarrays(policies: Vec<Self>) -> Vec<Array1<f32>>;
 }

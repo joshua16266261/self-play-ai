@@ -1,6 +1,6 @@
 use crate::game::{State, Policy};
 use crate::model::Net;
-use crate::mcts_parallel::{Args, Mcts, Node, Tree};
+use crate::mcts::{Args, Mcts, Node, Tree};
 
 use ndarray::{Array3, Array1, Array, stack, Axis, ArrayView3, ArrayView1};
 use rayon::prelude::*;
@@ -64,7 +64,6 @@ impl<T: Net> Learner<'_, T> {
                             .map(|x| x.get_encoding())
                             .collect()
                     );
-                    // policy_history.append(&mut tree.policy_history);
                     policy_history.append(
                         &mut tree.policy_history
                             .par_iter_mut()
@@ -124,22 +123,11 @@ impl<T: Net> Learner<'_, T> {
 
         // Actual logic
         for i in 0..self.args.num_learn_iters {
-            // let mut state_memory: Vec<<<T as crate::model::Net>::State as State>::Encoding> = Vec::new();
-            // let mut policy_memory: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::new();
-            // let mut value_memory: Vec<f32> = Vec::new();
-
             let mut state_memory: Vec<Array3<f32>> = Vec::new();
             let mut policy_memory: Vec<Array1<f32>> = Vec::new();
             let mut value_memory: Vec<f32> = Vec::new();
 
-            // TODO: Is there a reason to not always use num_self_play_iters = 1 and use parallelized self_play for everything?
-            // My guess is when you call self_play() with a large number of parallel self_play games, the function has to
-            // wait for all the games to finish before returning, so if one game takes especially long, then the function
-            // as a whole takes a long time
-            // But if each game takes roughly the same number of moves (like tic tac toe)
-            // then it should be faster to run all the games in parallel
-            // 
-            // Parallelize this and see if theres a benefit
+            // TODO: Parallelize
             for _ in 0..self.args.num_self_play_iters {
                 let (
                     mut states,

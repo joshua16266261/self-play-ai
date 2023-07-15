@@ -6,18 +6,16 @@ use tch::{
     Reduction,
     IndexOp,
     kind::Kind,
-    data::Iter2,
     nn,
     nn::{VarStore, Adam, OptimizerConfig, SequentialT, FuncT}
 };
 use indicatif::ProgressBar;
 use std::cmp::min;
-use ndarray::{stack, Axis, ArrayView, Ix3, Array2, ArrayD, Array1, Array4};
+use ndarray::{stack, Axis, ArrayD};
 use rayon::prelude::*;
 
-use crate::game::{Policy, State};
-// use crate::mcts::Args;
-use crate::mcts_parallel::Args;
+use crate::game::State;
+use crate::mcts::Args;
 
 pub trait Net {
     type State: State;
@@ -32,35 +30,6 @@ pub struct Model<T: Net> {
 
 impl<T: Net> Model<T> {
     pub fn predict(&self, states: &Vec<&T::State>) -> (Vec<<<T as crate::model::Net>::State as State>::Policy>, Vec<f32>) {
-        // TODO: Parallelize
-        // let mut all_encoded_states: Vec<f32> = Vec::new();
-        // for state in states {
-        //     all_encoded_states.extend_from_slice(state.get_encoding().get_flat_slice());
-        // }
-
-        // let all_encoded_states = states
-        //     .par_iter()
-        //     .fold(
-        //         Vec::new,
-        //         |mut acc: Vec<f32>, x| {
-        //             acc.extend_from_slice(x.encode().get_flat_slice());
-        //             acc
-        //         }
-        //     )
-        //     .reduce(
-        //         Vec::new,
-        //         |mut acc, mut x| {
-        //             acc.append(&mut x);
-        //             acc
-        //         }, 
-        //     );
-
-        // let a = states
-        //     .iter()
-        //     .map(|state| state.get_encoding().view())
-        //     .collect::<Vec<_>>()
-        //     .as_slice();
-
         let encoded_states = states
             .par_iter()
             .map(|state| state.get_encoding())
@@ -77,25 +46,11 @@ impl<T: Net> Model<T> {
                 .as_slice()
         ).unwrap();
 
-        // let encoded_states = stack(
-        //     Axis(0),
-        //     states
-        //         .iter()
-        //         .map(|state| state.get_encoding().view())
-        //         .collect::<Vec<_>>()
-        //         .as_slice()
-        // ).unwrap();
-
         let input = Tensor::try_from(encoded_states_ndarray).unwrap().to(Device::Mps);
-        // println!("{}", input.to(Device::Cpu));
-        // println!("{}", Tensor::from_slice(&[1, 2, 3, 4, 5, 6]));
-        // let input = Tensor::from_slice(&all_encoded_states).to(Device::Mps);
 
         let (mut policy_tensor, value_tensor) = self.net.forward(&input, false);
         policy_tensor = policy_tensor.softmax(-1, Kind::Float);
         let policy_tensor_shape = policy_tensor.size2().unwrap();
-
-        // println!("{}", policy_tensor.to(Device::Cpu));
 
         let policy_ndarray: ArrayD<f32> = (&policy_tensor).try_into().unwrap();
         let policy_ndarray = policy_ndarray.into_shape((policy_tensor_shape.0 as usize, policy_tensor_shape.1 as usize)).unwrap();
@@ -105,28 +60,11 @@ impl<T: Net> Model<T> {
         for i in 0..states.len() {
             let state = states.get(i).unwrap();
 
-            // let policy_vec = Vec::<f32>::try_from(policy_tensor.i((i as i64, ..)).contiguous().view(-1)).unwrap();
-            // let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
             let policy = policy_ndarray.index_axis(Axis(0), i);
             
             let masked_policy = state.mask_invalid_actions(policy).unwrap();
             policies.push(masked_policy);
         }
-
-        // let policy_vec = Vec::<f32>::try_from(policy_tensor.contiguous().view(-1)).unwrap();
-
-        // let a = states
-        //     .par_iter()
-        //     .enumerate()
-        //     .fold(
-        //         Vec::new,
-        //         |mut acc, (i, state)| {
-        //             let policy_vec = Vec::<f32>::try_from(policy_tensor.i((i as i64, ..)).contiguous().view(-1)).unwrap();
-        //             let masked_policy = state.mask_invalid_actions(policy_vec).unwrap();
-        //             acc.push(masked_policy);
-        //             acc
-        //         }
-        //     );
 
         let values = Vec::<f32>::try_from(value_tensor.contiguous().view(-1)).unwrap();
 
@@ -152,38 +90,10 @@ impl<T: Net> Model<T> {
         let policies = policies.index_select(0, &index);
         let values = values.index_select(0, &index);
 
-        // Convert states to tensor of shape (num_inputs, size_of_flatten_state)
-        // let mut states_flattened: Vec<f32> = Vec::new();
-        // for state in encoded_states {
-        //     states_flattened.extend_from_slice(state.get_flat_slice());
-        // }
-        // let state_tensors = Tensor::from_slice(&states_flattened).view((num_inputs, -1));
-
-        // let state_tensors = Tensor::try_from(encoded_states).unwrap().to(Device::Mps);
-
-        // Convert policies to tensor of shape (num_inputs, size_of_policy)
-        // let mut policies_flattened: Vec<f32> = Vec::new();
-        // for policy in policies {
-        //     policies_flattened.extend_from_slice(policy.get_flat_slice());
-        // }
-        // let policy_tensors = Tensor::from_slice(&policies_flattened).view((num_inputs, -1));
-
-        // let policy_tensors = Tensor::try_from(policies).unwrap().to(Device::Mps);
-
-        // Convert values to tensor of shape (num_inputs, 1)
-
-        // let value_tensors = Tensor::from_slice(&values).view((num_inputs, 1)).to(Device::Mps);
-
         pb.reset();
 
         for _ in 0..args.num_epochs {
             let mut loss = 0.0;
-
-            // for (state_batch, policy_batch) in
-            //     Iter2::new(&states, &policies, args.batch_size)
-            //         .shuffle()
-            //         .to_device(Device::Mps)
-            //         .return_smaller_last_batch() {
 
             for batch_idx in 0..num_batches {
                 let start_idx = batch_idx * args.batch_size;

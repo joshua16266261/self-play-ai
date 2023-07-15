@@ -2,7 +2,7 @@ use std::fmt;
 use rand::distributions::WeightedIndex;
 use rand::rngs::ThreadRng;
 use rand::prelude::*;
-use ndarray::{Array, Array1, Array2, Array3, ArrayView1, stack, Axis};
+use ndarray::{Array, Array1, Array2, Array3, ArrayView1};
 
 #[derive(Clone, Copy, Debug, strum_macros::Display, Default, PartialEq, Eq)]
 pub enum Player {
@@ -31,7 +31,6 @@ pub struct Action {
     pub col: usize
 }
 
-// pub type Policy = [f32; 9];
 #[derive(Clone)]
 pub struct Policy(Array2<f32>);
 
@@ -77,12 +76,6 @@ impl fmt::Display for Action {
     }
 }
 
-// impl Into<Array1<f32>> for Policy {
-//     fn into(self) -> Array1<f32> {
-//         self.0.into_shape((9,)).unwrap()
-//     }
-// }
-
 impl Default for Policy {
     fn default() -> Self {
         Self(Array::zeros((3, 3)))
@@ -101,8 +94,6 @@ impl super::Policy for Policy {
     }
 
     fn normalize(&mut self) {
-        // let sum: f32 = self.0.iter().sum();
-        // self.0.map(|x| x / sum)
         self.0 /= self.0.sum();
     }
 
@@ -130,16 +121,6 @@ impl super::Policy for Policy {
             .unwrap();
         Action { row: best_action_idx / 3, col: best_action_idx % 3 }
     }
-
-    // fn to_ndarray(policies: Vec<Self>) -> Vec<Array<f32>> {
-    //     let policies = policies
-    //         .par_iter()
-    //         .map(|policy| policy.0.to_shape((9,)).unwrap().view())
-    //         .collect::<Vec<_>>()
-    //         .as_slice();
-
-    //     stack(Axis(0), policies).unwrap()
-    // }
 }
 
 impl super::State for State {
@@ -242,7 +223,6 @@ impl super::State for State {
 
         let valid_actions = self.get_valid_actions();
 
-        // let mut mask = Array::<f32, _>::ones((3, 3));
         let mut mask = Array::zeros((3, 3));
         for action in valid_actions {
             mask[[action.row, action.col]] = 1.0;
@@ -252,17 +232,5 @@ impl super::State for State {
         masked_policy /= masked_policy.sum();
 
         Ok(Policy(masked_policy))
-
-        // let mut masked_policy: Policy = Array1::;
-        // let mut total_prob = 0.0;
-        // for action in valid_actions {
-        //     let idx = action.row * 3 + action.col;
-        //     let prob = *policy.get(idx).unwrap();
-        //     masked_policy[idx] = prob;
-        //     total_prob += prob;
-        // }
-        // masked_policy = masked_policy.map(|x| x / total_prob);
-
-        // Ok(masked_policy)
     }
 }

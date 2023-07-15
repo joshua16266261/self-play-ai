@@ -1,11 +1,11 @@
 mod model;
 mod game;
-mod mcts_parallel;
-mod learner_parallel;
+mod mcts;
+mod learner;
 
 use model::{Model};
-use mcts_parallel::{Args, Tree, Mcts};
-use learner_parallel::Learner;
+use mcts::{Args, Tree, Mcts};
+use learner::Learner;
 use tch::{nn::VarStore, Device};
 use game::{State, Policy, Status};
 
@@ -24,13 +24,11 @@ fn train() {
     var_store.set_device(Device::Mps);
 
     let args = Args {
-        // num_searches: 60,
+        num_searches: 60,
         num_self_play_iters: 10,
         num_parallel_self_play_games: 50, 
         ..Default::default()
     };
-    // let args = Args { num_self_play_iters: 2, num_parallel_self_play_games: 2, ..Default::default() };
-    // let args = Args { num_self_play_iters: 1, num_parallel_self_play_games: 500, ..Default::default() };
     let model = Model{ args, net };
     let mcts = Mcts{ args, model };
 
