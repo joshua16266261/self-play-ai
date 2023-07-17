@@ -1,4 +1,5 @@
 pub mod tictactoe;
+pub mod chess;
 
 use tch::{
     Tensor,

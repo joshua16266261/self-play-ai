@@ -30,7 +30,9 @@ pub struct State {
     fifty_move_rule_halfmove_counter: u64
 }
 
-impl super::Player for Color {
+pub type Player = Color;
+
+impl super::Player for Player {
     fn get_opposite(&self) -> Self {
         match self {
             Color::White => Color::Black,
@@ -264,7 +266,7 @@ impl super::State for State {
 impl Default for Policy {
     fn default() -> Self {
         Self{
-            probs: Array::zeros((8, 8, 73)),
+            probs: Array::zeros((73, 8, 8)),
             player: Color::White
         }
     }
@@ -356,7 +358,7 @@ impl Policy {
         let promotion =
             if channel < BISHOP_PROMOTION_START_IDX {
                 Some(Piece::Rook)
-            } else if channel < KNIGHT_MOVE_START_IDX {
+            } else if channel < KNIGHT_PROMOTION_START_IDX {
                 Some(Piece::Bishop)
             } else if channel < HORIZONTAL_MOVE_START_IDX {
                 Some(Piece::Knight)
@@ -493,10 +495,9 @@ impl super::Policy for Policy {
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Self::Action {
         // Higher temperature => squishes probabilities together => encourages more exploration
         let temperature_action_probs = self.probs.mapv(|x| x.powf(temperature));
-        let dist = WeightedIndex::new(temperature_action_probs).unwrap();
+        let dist = WeightedIndex::new(temperature_action_probs.into_shape(73 * 8 * 8,).unwrap()).unwrap();
         let idx = dist.sample(rng);
 
-        // self.get_action(idx / (8 * 73), (idx % (8 * 73)) / 73, idx % 73)
         self.get_action(idx / 64, (idx % 64) / 8, idx % 8)
     }
 

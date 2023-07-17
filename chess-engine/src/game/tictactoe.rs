@@ -25,7 +25,7 @@ pub struct State {
     status: super::Status
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Action {
     pub row: usize,
     pub col: usize

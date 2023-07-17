@@ -3,6 +3,7 @@ pub mod chess;
 
 use rand::rngs::ThreadRng;
 use ndarray::{Array1, Array3, ArrayView1};
+use std::fmt;
 
 #[derive(Copy, Clone, Debug, strum_macros::Display, Default, PartialEq, Eq)]
 pub enum Status{
@@ -30,7 +31,7 @@ pub trait State: Default + Clone + Send + Sync {
 }
 
 pub trait Policy: Default + Send + Clone {
-    type Action: Clone + Send;
+    type Action: Clone + Send + fmt::Debug;
 
     fn get_prob(&self, action: &Self::Action) -> f32;
     fn set_prob(&mut self, action: &Self::Action, prob: f32);

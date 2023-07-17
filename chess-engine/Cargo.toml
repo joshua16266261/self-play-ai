@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 chess = "3.2.0"
+# chess-gui = { version = "0.2.4", package = "rg-chess" }
 tch = "0.13"
 strum = "0.25"
 strum_macros = "0.25"
