@@ -56,7 +56,6 @@ impl<T: Net> Model<T> {
         let policy_ndarray: ArrayD<f32> = (&policy_tensor).try_into().unwrap();
         let policy_ndarray = policy_ndarray.into_shape((policy_tensor_shape.0 as usize, policy_tensor_shape.1 as usize)).unwrap();
 
-        // TODO: Parallelize
         let mut policies: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::with_capacity(states.len());
         for i in 0..states.len() {
             let state = states.get(i).unwrap();
@@ -94,7 +93,7 @@ impl<T: Net> Model<T> {
         pb.reset();
 
         for _ in 0..args.num_epochs {
-            let mut loss = 0.0;
+            let mut loss = Tensor::new();
 
             for batch_idx in 0..num_batches {
                 let start_idx = batch_idx * args.batch_size;
@@ -115,9 +114,9 @@ impl<T: Net> Model<T> {
 
                 optimizer.backward_step(&total_loss);
 
-                loss = total_loss.double_value(&[]);
+                loss = total_loss;
             }
-            pb.set_message(format!("Loss: {:.3}", loss));
+            pb.set_message(format!("Loss: {:.3}", loss.double_value(&[])));
             pb.inc(1);
         }
         pb.finish();

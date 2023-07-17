@@ -64,12 +64,14 @@ impl<T: Net> Learner<'_, T> {
                             .map(|x| x.get_encoding())
                             .collect()
                     );
+
                     policy_history.append(
                         &mut tree.policy_history
                             .par_iter_mut()
                             .map(|policy| policy.get_flat_ndarray())
                             .collect()
                     );
+
                     value_history.append(
                         &mut tree.state_history
                             .par_iter()
@@ -127,7 +129,6 @@ impl<T: Net> Learner<'_, T> {
             let mut policy_memory: Vec<Array1<f32>> = Vec::new();
             let mut value_memory: Vec<f32> = Vec::new();
 
-            // TODO: Parallelize
             for _ in 0..self.args.num_self_play_iters {
                 let (
                     mut states,

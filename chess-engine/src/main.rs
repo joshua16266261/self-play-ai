@@ -19,18 +19,16 @@ fn train() {
     let mut var_store = VarStore::new(Device::Cpu);
     let net = model::chess::Net::new(
         &var_store.root(),
-        4,
+        10,
         256
     );
     var_store.set_device(Device::Mps);
 
     let args = Args {
-        // num_searches: 600,
-        // num_self_play_iters: 100,
-        // num_parallel_self_play_games: 50, 
-        num_searches: 2,
-        num_self_play_iters: 2,
-        num_parallel_self_play_games: 2, 
+        num_learn_iters: 2, // Just for profiling
+        num_searches: 600,
+        num_self_play_iters: 10,
+        num_parallel_self_play_games: 50, 
         ..Default::default()
     };
     let model = Model{ args, net };
@@ -50,13 +48,17 @@ fn play() {
     // let net = model::tictactoe::Net::new(&var_store.root(), 4, 64);
     let net = model::chess::Net::new(
         &var_store.root(), 
-        4, 
+        10, 
         256
     );
     var_store.load(format!("{CHECKPOINT_DIR}/2.safetensors")).unwrap();
     var_store.set_device(Device::Mps);
 
-    let args = Args::default();
+    // let args = Args::default();
+    let args = Args {
+        num_searches: 6000,
+        ..Default::default()
+    };
     let model = Model{ args, net };
     let mcts = Mcts{ args, model };
 
@@ -103,33 +105,5 @@ fn play() {
 fn main() {
     train();
     
-    play();
-
-    // Test chess
-    // let mut state = game::chess::State::default();
-
-    // loop {
-    //     match state.get_status() {
-    //         Status::Ongoing => {
-    //             println!("{}", state);
-    
-    //             let mut line = String::new();
-    //             let _ = std::io::stdin().read_line(&mut line).unwrap();
-    //             let action = ChessMove::from_san(&state.game.current_position(), line.as_str()).unwrap();
-    
-    //             state = state.get_next_state(&action).unwrap();
-    //         },
-    //         Status::Won => {
-    //             println!("{}", state);
-    //             println!("Winner: {:?}", state.get_current_player().get_opposite());
-    //             break;
-    //         },
-    //         Status::Tied => {
-    //             println!("{}", state);
-    //             println!("Draw");
-    //             break;
-    //         },
-    //     }
-    // }
-    
+    // play();
 }

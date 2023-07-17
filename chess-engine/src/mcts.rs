@@ -114,7 +114,6 @@ impl<T: State> Tree<T> {
     }
 
     fn select(&self, parent_id: usize) -> usize {
-        // TODO: Parallelize
         let parent_node = self.arena.get(parent_id).unwrap();
         let node_comparison = |a: &&usize, b: &&usize|
             self.get_ucb(parent_id, **a)
