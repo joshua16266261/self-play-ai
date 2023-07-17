@@ -1,4 +1,5 @@
 pub mod tictactoe;
+pub mod chess;
 
 use rand::rngs::ThreadRng;
 use ndarray::{Array1, Array3, ArrayView1};
@@ -8,7 +9,7 @@ pub enum Status{
     #[default]
     Ongoing,
     Tied,
-    Completed
+    Won
 }
 
 pub trait Player: Eq + Copy {

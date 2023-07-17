@@ -8,6 +8,7 @@ use mcts::{Args, Tree, Mcts};
 use learner::Learner;
 use tch::{nn::VarStore, Device};
 use game::{State, Policy, Status};
+use chess::ChessMove;
 
 use crate::game::Player;
 
@@ -72,7 +73,7 @@ fn play() {
         state = state.get_next_state(&action).unwrap();
 
         match state.get_status() {
-            Status::Completed => {
+            Status::Won => {
                 println!("{state}");
                 println!("Winner: {}", state.get_current_player().get_opposite());
                 break;
@@ -88,7 +89,35 @@ fn play() {
 }
 
 fn main() {
-    train();
+    // train();
     
-    play();
+    // play();
+
+    // Test chess
+    let mut state = game::chess::State::default();
+
+    loop {
+        match state.get_status() {
+            Status::Ongoing => {
+                println!("{}", state);
+    
+                let mut line = String::new();
+                let _ = std::io::stdin().read_line(&mut line).unwrap();
+                let action = ChessMove::from_san(&state.game.current_position(), line.as_str()).unwrap();
+    
+                state = state.get_next_state(&action).unwrap();
+            },
+            Status::Won => {
+                println!("{}", state);
+                println!("Winner: {:?}", state.get_current_player().get_opposite());
+                break;
+            },
+            Status::Tied => {
+                println!("{}", state);
+                println!("Draw");
+                break;
+            },
+        }
+    }
+    
 }

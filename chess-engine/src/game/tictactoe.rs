@@ -103,10 +103,11 @@ impl super::Policy for Policy {
 
     fn sample(&self, rng: &mut ThreadRng, temperature: f32) -> Action {
         // Higher temperature => squishes probabilities together => encourages more exploration
-        let temperature_action_probs: Vec<f32> = self.0
-            .iter()
-            .map(|x| f32::powf(*x, temperature))
-            .collect();
+        // let temperature_action_probs: Vec<f32> = self.0
+        //     .iter()
+        //     .map(|x| f32::powf(*x, temperature))
+        //     .collect();
+        let temperature_action_probs = self.get_flat_ndarray().mapv(|x| x.powf(temperature));
         let dist = WeightedIndex::new(temperature_action_probs).unwrap();
         let idx = dist.sample(rng);
         Action{ row: idx / 3, col: idx % 3}
@@ -154,7 +155,7 @@ impl super::State for State {
                         next_state.board.0[0][2] == next_state.board.0[1][1] && next_state.board.0[1][1] == next_state.board.0[2][0];
                     
                     if is_row_win || is_col_win || is_nw_se_diag_win || is_ne_sw_diag_win {
-                        next_state.status = super::Status::Completed
+                        next_state.status = super::Status::Won
                     } else if next_state.num_actions_played == 9 {
                         next_state.status = super::Status::Tied
                     }
@@ -189,7 +190,7 @@ impl super::State for State {
         // i.e., if it's X to play but the game is over
         // then X is lost and the value is -1 (which is +1 from the parent's perspective)
         match self.status {
-            super::Status::Completed => (-1.0, true),
+            super::Status::Won => (-1.0, true),
             super::Status::Tied => (0.0, true),
             super::Status::Ongoing => (0.0, false)
         }
