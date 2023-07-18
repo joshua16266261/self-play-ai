@@ -30,7 +30,7 @@ pub trait State: Default + Clone + Send + Sync {
     fn mask_invalid_actions(&self, policy: ArrayView1<f32>) -> Result<Self::Policy, String>;
 }
 
-pub trait Policy: Default + Send + Clone {
+pub trait Policy: Default + Send + Clone + fmt::Debug {
     type Action: Clone + Send + fmt::Debug;
 
     fn get_prob(&self, action: &Self::Action) -> f32;

@@ -56,15 +56,23 @@ impl<T: Net> Model<T> {
         let policy_ndarray: ArrayD<f32> = (&policy_tensor).try_into().unwrap();
         let policy_ndarray = policy_ndarray.into_shape((policy_tensor_shape.0 as usize, policy_tensor_shape.1 as usize)).unwrap();
 
-        let mut policies: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::with_capacity(states.len());
-        for i in 0..states.len() {
-            let state = states.get(i).unwrap();
+        // let mut policies: Vec<<<T as crate::model::Net>::State as State>::Policy> = Vec::with_capacity(states.len());
+        // for i in 0..states.len() {
+        //     let state = states.get(i).unwrap();
 
-            let policy = policy_ndarray.index_axis(Axis(0), i);
+        //     let policy = policy_ndarray.index_axis(Axis(0), i);
             
-            let masked_policy = state.mask_invalid_actions(policy).unwrap();
-            policies.push(masked_policy);
-        }
+        //     let masked_policy = state.mask_invalid_actions(policy).unwrap();
+        //     policies.push(masked_policy);
+        // }
+        let policies = states
+            .par_iter()
+            .enumerate()
+            .map(|(i, state)| {
+                let policy = policy_ndarray.index_axis(Axis(0), i);
+                state.mask_invalid_actions(policy).unwrap()
+            })
+            .collect();
 
         let values = Vec::<f32>::try_from(value_tensor.contiguous().view(-1)).unwrap();
 

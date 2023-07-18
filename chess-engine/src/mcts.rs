@@ -3,6 +3,7 @@ use crate::model::{Net, Model};
 
 // use rand_distr::Dirichlet;
 use rayon::prelude::*;
+use std::collections::VecDeque;
 
 #[derive(Clone, Copy)]
 pub struct Args {
@@ -16,12 +17,12 @@ pub struct Args {
     pub num_epochs: u32
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Node<T: State> {
     pub state: T,
     id: usize,
     parent_id: Option<usize>,
-    action_taken: Option<<<T as State>::Policy as Policy>::Action>,
+    pub action_taken: Option<<<T as State>::Policy as Policy>::Action>,
     prior: Option<f32>,
     children_ids: Vec<usize>,
     visit_count: u32,
@@ -63,20 +64,20 @@ impl<T: State> Node<T> {
     }
 }
 
-impl<T: State> Default for Node<T> {
-    fn default() -> Self {
-        Self {
-            state: T::default(),
-            id: 0,
-            parent_id: None,
-            action_taken: None,
-            prior: None,
-            children_ids: Vec::new(),
-            visit_count: 1,
-            value_sum: 0.0
-        }
-    }
-}
+// impl<T: State> Default for Node<T> {
+//     fn default() -> Self {
+//         Self {
+//             state: T::default(),
+//             id: 0,
+//             parent_id: None,
+//             action_taken: None,
+//             prior: None,
+//             children_ids: Vec::new(),
+//             visit_count: 1,
+//             value_sum: 0.0
+//         }
+//     }
+// }
 
 impl<T: State> Default for Tree<T> {
     fn default() -> Self { 
@@ -164,8 +165,6 @@ impl<T: State> Tree<T> {
         node.value_sum += sign * value;
         sign *= -1.0;
 
-        // TODO: If we include a depth field to the Node struct,
-        // then this might be parallelizable
         while let Some(parent_id) = node.parent_id {
             node = self.arena.get_mut(parent_id).unwrap();
             node.visit_count += 1;
@@ -173,10 +172,42 @@ impl<T: State> Tree<T> {
             sign *= -1.0;
         };
     }
+
+    pub fn use_subtree(&mut self, new_root_id: usize) {
+        let old_arena = &mut self.arena;
+        let mut new_arena: Vec<Node<T>> = vec![];
+
+        let mut new_root = old_arena[new_root_id].clone();
+        new_root.parent_id = None;
+
+        let mut nodes_to_add = VecDeque::from([new_root]);
+        let mut next_id = 0;
+
+        while let Some(mut node) = nodes_to_add.pop_front() {
+            node.id = next_id;
+
+            for child_id in node.children_ids.iter() {
+                let mut child_node = old_arena[*child_id].clone();
+                child_node.parent_id = Some(node.id);
+                nodes_to_add.push_back(child_node);
+            }
+
+            node.children_ids.clear();
+
+            if let Some(parent_id) = node.parent_id {
+                new_arena.get_mut(parent_id).unwrap().children_ids.push(node.id);
+            }
+
+            new_arena.push(node);
+            next_id += 1;
+        }
+
+        self.arena = new_arena;   
+    }
 }
 
 impl<T: Net> Mcts<T> {
-    pub fn search(&self, trees: &mut Vec<Tree<T::State>>) -> Vec<<<T as Net>::State as State>::Policy> {
+    pub fn search(&self, trees: &mut Vec<&mut Tree<T::State>>) -> Vec<(<<T as Net>::State as State>::Policy, Vec<(usize, f32)>)> {
         let states = trees
             .par_iter_mut()
             .map(|x| &x.arena.get(0).unwrap().state)
@@ -195,7 +226,7 @@ impl<T: Net> Mcts<T> {
             );
 
         for _ in 0..self.args.num_searches {
-            let mut trees_to_expand: Vec<&mut Tree<T::State>> = trees
+            let mut trees_to_expand: Vec<_> = trees
                 .par_iter_mut()
                 .update(|tree| {
                     let mut node = tree.arena.get(0).unwrap();
@@ -240,18 +271,24 @@ impl<T: Net> Mcts<T> {
         trees
             .par_iter_mut()
             .map(|tree| {
-                let mut visit_counts = <<T as crate::model::Net>::State as State>::Policy::default();
                 let children_ids = &tree.arena.get(0).unwrap().children_ids;
+
+                let mut visit_counts = <<T as crate::model::Net>::State as State>::Policy::default();
+                let mut child_id_to_probs = Vec::with_capacity(children_ids.len());
+
                 for child_id in children_ids {
                     let child_node = tree.arena.get(*child_id).unwrap();
+
                     let action = child_node.action_taken.clone().unwrap();
                     let child_visit_count = child_node.visit_count as f32;
 
                     visit_counts.set_prob(&action, child_visit_count);
+                    child_id_to_probs.push((*child_id, child_visit_count));
                 }
 
                 visit_counts.normalize();
-                visit_counts
+
+                (visit_counts, child_id_to_probs)
             })
             .collect()
     }

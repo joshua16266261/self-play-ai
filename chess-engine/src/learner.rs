@@ -8,6 +8,9 @@ use rayon::iter::repeatn;
 use tch::{Tensor, Device, nn::VarStore};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::create_dir;
+use rand::distributions::WeightedIndex;
+use rand::prelude::*;
+use std::time::Instant;
 
 pub struct Learner<'a, T: Net> {
     pub args: Args,
@@ -16,42 +19,37 @@ pub struct Learner<'a, T: Net> {
 }
 
 impl<T: Net> Learner<'_, T> {
-    #[allow(clippy::type_complexity)]
-    fn self_play(&self) -> (
-        Vec<Array3<f32>>,
-        Vec<Array1<f32>>,
-        Vec<f32>
-    ) {
-
+    fn self_play(&self) -> (Vec<Array3<f32>>, Vec<Array1<f32>>, Vec<f32>) {
         let mut state_history: Vec<Array3<f32>> = Vec::new();
         let mut policy_history: Vec<Array1<f32>> = Vec::new();
         let mut value_history: Vec<f32> = Vec::new();
 
-        let mut trees: Vec<Tree<T::State>> = repeatn(Tree::<T::State>::default(), self.args.num_parallel_self_play_games).collect();
+        let mut trees: Vec<_> = repeatn(Tree::<T::State>::default(), self.args.num_parallel_self_play_games).collect();
+        let mut trees_vec: Vec<_> = trees.par_iter_mut().collect();
 
         let mut rng = rand::thread_rng();
 
-        while !trees.is_empty() {
-            let mut all_action_probs = self.mcts.search(&mut trees);
-            // let all_action_probs = Policy::to_ndarray(self.mcts.search(&mut trees));
+        while !trees_vec.is_empty() {
+            let now = Instant::now();
+            let mut search_results = self.mcts.search(&mut trees_vec);
+            println!("{}", now.elapsed().as_millis());
 
-            // TODO: Might be able to parallelize
-            // Handle removal with filter function
-            for i in (0..trees.len()).rev() {
-                // TODO: Use map_with to map terminal trees to their state, policy, and value histories
-                // Non-terminal trees will be mapped to zero-capacity vectors
-                // and the trees themselves will be a sent to a receiver to be collected and used for the next iteration
-                // The result of map_with will be flattened and collected
-
-                let tree = trees.get_mut(i).unwrap();
+            for i in (0..trees_vec.len()).rev() {
+                let tree = trees_vec.get_mut(i).unwrap();
                 let root_state = tree.arena.get(0).unwrap().state.clone();
 
-                // let action_probs = *all_action_probs.get(i).unwrap();
-                let action_probs = all_action_probs.pop().unwrap();
+                let (action_probs, child_id_to_probs) = search_results.pop().unwrap();
 
                 // Higher temperature => squishes probabilities together => encourages more exploration
-                let action = action_probs.sample(&mut rng, self.args.temperature);
-                let state = root_state.get_next_state(&action).unwrap();
+                // let action = action_probs.sample(&mut rng, self.args.temperature);
+                // let state = root_state.get_next_state(&action).unwrap();
+                let temperature_action_probs = child_id_to_probs
+                    .iter()
+                    .map(|(_, prob)| prob.powf(self.args.temperature));
+                let dist = WeightedIndex::new(temperature_action_probs).unwrap();
+                let idx = dist.sample(&mut rng);
+                let selected_id = child_id_to_probs[idx].0;
+                let state = &tree.arena[selected_id].state;
 
                 tree.state_history.push(root_state);
                 tree.policy_history.push(action_probs);
@@ -86,11 +84,12 @@ impl<T: Net> Learner<'_, T> {
                             .collect()
                     );
 
-                    trees.remove(i);
+                    trees_vec.remove(i);
                 } else {
                     // Next search starts from new sampled state
-                    tree.arena = vec![Node::create_root_node(state)];
                     tree.node_id_to_expand = None;
+                    // tree.arena = vec![Node::create_root_node(state.clone())];
+                    tree.use_subtree(selected_id);
                 }
             }
         }
@@ -125,23 +124,41 @@ impl<T: Net> Learner<'_, T> {
 
         // Actual logic
         for i in 0..self.args.num_learn_iters {
-            let mut state_memory: Vec<Array3<f32>> = Vec::new();
-            let mut policy_memory: Vec<Array1<f32>> = Vec::new();
-            let mut value_memory: Vec<f32> = Vec::new();
+            let (state_memory,
+                policy_memory,
+                value_memory): (Vec<_>, Vec<_>, Vec<_>) = repeatn({
+                    let (
+                        states,
+                        policies,
+                        values
+                    ) = self.self_play();
 
-            for _ in 0..self.args.num_self_play_iters {
-                let (
-                    mut states,
-                    mut policies,
-                    mut values
-                ) = self.self_play();
+                    self_play_pb.inc(1);
 
-                state_memory.append(&mut states);
-                policy_memory.append(&mut policies);
-                value_memory.append(&mut values);
+                    (states, policies, values)
+                },self.args.num_self_play_iters as usize)
+                .reduce(
+                || (Vec::new(), Vec::new(), Vec::new()),
+                |
+                    (
+                        mut states_acc,
+                        mut policies_acc,
+                        mut values_acc
+                    ),
+                    (
+                        mut states,
+                        mut policies,
+                        mut values
+                    )
+                    | {
+                        states_acc.append(&mut states);
+                        policies_acc.append(&mut policies);
+                        values_acc.append(&mut values);
 
-                self_play_pb.inc(1);
-            }
+                        (states_acc, policies_acc, values_acc)
+                    }
+                );
+
             self_play_pb.reset();
 
             let state_memory_views: Vec<ArrayView3<f32>> = state_memory

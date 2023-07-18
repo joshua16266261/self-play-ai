@@ -31,7 +31,7 @@ pub struct Action {
     pub col: usize
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Policy(Array2<f32>);
 
 impl super::Player for Player {

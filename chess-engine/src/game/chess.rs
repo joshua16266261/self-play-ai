@@ -17,7 +17,7 @@ const VERTICAL_MOVE_START_IDX: usize = HORIZONTAL_MOVE_START_IDX + 2 * NUM_SINGL
 const DIAGONAL_MOVE_START_IDX: usize = VERTICAL_MOVE_START_IDX + 2 * NUM_SINGLE_SQUARE_STEPS;
 const KNIGHT_MOVE_START_IDX: usize = DIAGONAL_MOVE_START_IDX + 4 * NUM_SINGLE_SQUARE_STEPS;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Policy {
     probs: Array3<f32>,
     player: Color
@@ -252,14 +252,35 @@ impl super::State for State {
             player: self.get_current_player()
         };
 
+        let mut mask = Policy { player: policy.player, ..Default::default() };
         for action in MoveGen::new_legal(&self.game.current_position()) {
-            // policy.set_prob(&action, 0.0);
-            super::Policy::set_prob(&mut policy, &action, 0.0);
+            super::Policy::set_prob(&mut mask, &action, 1.0);
         }
 
-        super::Policy::normalize(&mut policy);
+        let mut masked_probs = &policy.probs * &mask.probs;
+        masked_probs /= masked_probs.sum();
+        policy.probs = masked_probs;
 
         Ok(policy)
+
+        // if policy.shape() != [73 * 8 * 8,] {
+        //     return Err(format!("Expected policy shape to be (73 * 8 * 8,), found {:?}", policy.shape()));
+        // }
+
+        // let reshaped_policy = policy.into_shape((73, 8, 8)).unwrap().into_owned();
+        // let mut policy = Policy {
+        //     probs: reshaped_policy,
+        //     player: self.get_current_player()
+        // };
+
+        // for action in MoveGen::new_legal(&self.game.current_position()) {
+        //     // policy.set_prob(&action, 0.0);
+        //     super::Policy::set_prob(&mut policy, &action, 0.0);
+        // }
+
+        // super::Policy::normalize(&mut policy);
+
+        // Ok(policy)
     }
 }
 

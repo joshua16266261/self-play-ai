@@ -26,9 +26,10 @@ fn train() {
 
     let args = Args {
         num_learn_iters: 2, // Just for profiling
-        num_searches: 600,
+        num_searches: 60,
         num_self_play_iters: 10,
-        num_parallel_self_play_games: 50, 
+        // num_parallel_self_play_games: 64, 
+        num_parallel_self_play_games: 2,
         ..Default::default()
     };
     let model = Model{ args, net };
@@ -63,6 +64,8 @@ fn play() {
     let mcts = Mcts{ args, model };
 
     let mut state = game::chess::State::default();
+    let mut tree = Tree::with_root_state(state.clone());
+    // let mut tree_vec = ;
 
     loop {
         println!("{state}");
@@ -81,7 +84,18 @@ fn play() {
                 let _ = std::io::stdin().read_line(&mut line).unwrap();
                 ChessMove::from_san(&state.game.current_position(), line.as_str()).unwrap()
             } else {
-                mcts.search(&mut vec![Tree::with_root_state(state.clone())])[0].get_best_action()
+                let (_, child_id_to_probs) = &mcts.search(&mut vec![&mut tree])[0];
+
+                let best_child_id = child_id_to_probs
+                    .iter()
+                    .max_by(|(_, prob1), (_, prob2)| prob1.total_cmp(prob2))
+                    .map(|(id, _)| *id)
+                    .unwrap();
+                
+                tree.use_subtree(best_child_id);
+
+                tree.arena.get(0).unwrap().action_taken.unwrap()
+                // search_results.get_best_action()
             };
 
         state = state.get_next_state(&action).unwrap();
