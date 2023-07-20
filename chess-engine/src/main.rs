@@ -202,10 +202,9 @@ fn train_concurrent() {
 }
 
 fn main() {
-    // FIXME: Loss is NaN
-    train();
+    // train();
     
     // play();
 
-    // train_concurrent();
+    train_concurrent();
 }

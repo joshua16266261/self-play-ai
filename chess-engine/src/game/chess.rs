@@ -495,11 +495,7 @@ impl super::Policy for Policy {
         if self.player == Color::Black {
             row = 7 - row;
         }
-        self.probs[[
-            self.get_channel(action),
-            row,
-            source_square.get_file().to_index()
-        ]]
+        self.probs[[self.get_channel(action), row, source_square.get_file().to_index()]]
     }
 
     fn set_prob(&mut self, action: &Self::Action, prob: f32) {
@@ -513,9 +509,6 @@ impl super::Policy for Policy {
     }
 
     fn normalize(&mut self) {
-        if self.probs.sum() == 0.0 {
-            panic!("Sum cannot be zero");
-        }
         self.probs /= self.probs.sum()
     }
 

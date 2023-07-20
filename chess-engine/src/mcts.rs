@@ -174,6 +174,7 @@ impl<T: State> Tree<T> {
     }
 
     pub fn use_subtree(&mut self, new_root_id: usize) {
+        // FIXME: We are getting repeats
         let old_arena = &mut self.arena;
         let mut new_arena: Vec<Node<T>> = vec![];
 
@@ -208,22 +209,22 @@ impl<T: State> Tree<T> {
 
 impl<T: Net> Mcts<T> {
     pub fn search(&self, trees: &mut Vec<&mut Tree<T::State>>) -> Vec<(<<T as Net>::State as State>::Policy, Vec<(usize, f32)>)> {
-        let states = trees
-            .par_iter_mut()
-            .map(|x| &x.arena.get(0).unwrap().state)
-            .collect();
+        // let states = trees
+        //     .par_iter_mut()
+        //     .map(|x| &x.arena.get(0).unwrap().state)
+        //     .collect();
 
-        let (policies, _) = self.model.predict(&states);
+        // let (policies, _) = self.model.predict(&states);
 
         // TODO: Add Dirichlet noise
         // let dirichlet = Dirichlet::new(&[1.0, 2.0, 3.0]).unwrap();
         // let mut rng = rand::thread_rng();
         // let samples = dirichlet.sample(&mut rng);
 
-        trees.par_iter_mut().zip(policies)
-            .for_each(|(tree, policy)|
-                tree.expand(0, policy)
-            );
+        // trees.par_iter_mut().zip(policies)
+        //     .for_each(|(tree, policy)|
+        //         tree.expand(0, policy)
+        //     );
 
         for _ in 0..self.args.num_searches {
             let mut trees_to_expand: Vec<_> = trees
@@ -276,10 +277,6 @@ impl<T: Net> Mcts<T> {
                 let mut visit_counts = tree.arena.get(0).unwrap().state.get_zero_policy();
                 let mut child_id_to_probs = Vec::with_capacity(children_ids.len());
 
-                if children_ids.len() == 0 {
-                    panic!("Node should not have zero children");
-                }
-
                 for child_id in children_ids {
                     let child_node = tree.arena.get(*child_id).unwrap();
 
@@ -291,7 +288,6 @@ impl<T: Net> Mcts<T> {
                 }
 
                 visit_counts.normalize();
-
                 (visit_counts, child_id_to_probs)
             })
             .collect()
