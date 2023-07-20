@@ -20,7 +20,9 @@ use crate::mcts::Args;
 
 pub trait Net {
     type State: State;
+    type Args: Default;
 
+    fn new(vs: &nn::Path, args: Self::Args) -> Self;
     fn forward(&self, x: &Tensor, train: bool) -> (Tensor, Tensor);
 }
 
@@ -115,7 +117,7 @@ impl<T: Net> Model<T> {
 
                 let policy_softmax = policy.log_softmax(-1, Kind::Float);
                 let policy_nll = policy_softmax * policy_batch;
-                let policy_loss = -policy_nll.sum(Kind::Float) / num_inputs;
+                let policy_loss = -policy_nll.sum(Kind::Float) / policy.size()[0];
 
                 let value_loss = value.mse_loss(&value_batch, Reduction::Mean);
                 let total_loss = policy_loss + value_loss;

@@ -234,4 +234,8 @@ impl super::State for State {
 
         Ok(Policy(masked_policy))
     }
+
+    fn get_zero_policy(&self) -> Policy {
+        Policy::default()
+    }
 }

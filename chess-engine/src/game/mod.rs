@@ -28,6 +28,7 @@ pub trait State: Default + Clone + Send + Sync {
     fn get_value_and_terminated(&self) -> (f32, bool);
     fn get_encoding(&self) -> Array3<f32>;
     fn mask_invalid_actions(&self, policy: ArrayView1<f32>) -> Result<Self::Policy, String>;
+    fn get_zero_policy(&self) -> Self::Policy;
 }
 
 pub trait Policy: Default + Send + Clone + fmt::Debug {

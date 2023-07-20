@@ -282,6 +282,13 @@ impl super::State for State {
 
         // Ok(policy)
     }
+
+    fn get_zero_policy(&self) -> Policy {
+        Policy {
+            player: self.get_current_player(),
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for Policy {
@@ -506,6 +513,9 @@ impl super::Policy for Policy {
     }
 
     fn normalize(&mut self) {
+        if self.probs.sum() == 0.0 {
+            panic!("Sum cannot be zero");
+        }
         self.probs /= self.probs.sum()
     }
 

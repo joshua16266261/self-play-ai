@@ -32,7 +32,6 @@ impl<T: Net> Learner<'_, T> {
         while !trees_vec.is_empty() {
             let now = Instant::now();
             let mut search_results = self.mcts.search(&mut trees_vec);
-            println!("{}", now.elapsed().as_millis());
 
             for i in (0..trees_vec.len()).rev() {
                 let tree = trees_vec.get_mut(i).unwrap();

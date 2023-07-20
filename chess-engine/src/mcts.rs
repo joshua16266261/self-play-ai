@@ -273,8 +273,12 @@ impl<T: Net> Mcts<T> {
             .map(|tree| {
                 let children_ids = &tree.arena.get(0).unwrap().children_ids;
 
-                let mut visit_counts = <<T as crate::model::Net>::State as State>::Policy::default();
+                let mut visit_counts = tree.arena.get(0).unwrap().state.get_zero_policy();
                 let mut child_id_to_probs = Vec::with_capacity(children_ids.len());
+
+                if children_ids.len() == 0 {
+                    panic!("Node should not have zero children");
+                }
 
                 for child_id in children_ids {
                     let child_node = tree.arena.get(*child_id).unwrap();
