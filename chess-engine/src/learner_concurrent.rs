@@ -1,15 +1,14 @@
-use crate::model::{Model, Net, self};
-use crate::mcts::{Mcts, Args, Tree};
+use crate::model::Net;
+use crate::mcts::{Mcts, Tree};
 use crate::game::{State, Policy};
 
 use core::time;
 use std::mem::MaybeUninit;
-// use std::sync::mpsc::{channel, Sender, Receiver};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, Condvar};
 use std::thread::sleep;
-use ringbuf::{SharedRb, Rb, Consumer};
+use ringbuf::{SharedRb, Rb};
 use ndarray::{Array3, Array1, ArrayView3, ArrayView1, stack, Axis, Array};
-use tch::{Tensor, Device, kind::Kind, Reduction, nn::{VarStore, Adam, OptimizerConfig, Optimizer}};
+use tch::{Tensor, Device, kind::Kind, Reduction, nn::{VarStore, Optimizer}};
 use indicatif::ProgressBar;
 use rand::{prelude::*, distributions::WeightedIndex};
 
@@ -20,6 +19,7 @@ pub struct Payload {
     value: f32
 }
 
+#[derive(Clone)]
 pub struct SelfPlayArgs {
     pub c: f32,
     pub num_mcts_searches: u32,
@@ -27,9 +27,11 @@ pub struct SelfPlayArgs {
     pub num_batched_self_play_games: usize
 }
 
+pub type ReplayBuffer = Arc<(Mutex<SharedRb<Payload, Vec<MaybeUninit<Payload>>>>, Condvar)>;
+
 pub struct SelfPlayWorker<T: Net> {
     pub args: SelfPlayArgs,
-    pub replay_buffer: Arc<Mutex<SharedRb<Payload, Vec<MaybeUninit<Payload>>>>>,
+    pub replay_buffer: ReplayBuffer,
     pub mcts: Mcts<T>
 }
 
@@ -41,8 +43,7 @@ pub struct TrainingArgs {
 
 pub struct ModelTrainerWorker<T: Net> {
     pub args: TrainingArgs,
-    // rx: Consumer<Payload, Arc<SharedRb<Payload, Vec<MaybeUninit<Payload>>>>>,
-    pub replay_buffer: Arc<Mutex<SharedRb<Payload, Vec<MaybeUninit<Payload>>>>>,
+    pub replay_buffer: ReplayBuffer,
     pub net: T,
     pub var_store: VarStore,
     pub optimizer: Optimizer
@@ -85,27 +86,28 @@ impl<T: Net> ModelTrainerWorker<T> {
         total_loss.double_value(&[])
     }
 
-    // TODO: Share Varstore instead of String
-    pub fn train_loop(&mut self, checkpoint_path_rwlock: Arc<RwLock<Option<String>>>, checkpoint_dir: &str, pb: &ProgressBar) {
+    pub fn train_loop(
+        &mut self,
+        varstore_rwlock: Arc<RwLock<VarStore>>,
+        in_training_rwlock: Arc<RwLock<bool>>,
+        checkpoint_dir: &str,
+        training_pb: &ProgressBar,
+        replay_buffer_pb: Arc<Mutex<ProgressBar>>
+    ) {
+
         for i in 0..self.args.num_train_iters {
             for _ in 0..self.args.num_batches_per_iter {
-                println!("Waiting for new batch");
-                loop {
-                    sleep(time::Duration::from_secs(1));
-                    let replay_buffer_mutex = self.replay_buffer.lock().unwrap();
-                    if replay_buffer_mutex.len() >= self.args.batch_size {
-                        break;
-                    }
-                }
-
-                println!("Training");
                 let (state_batch, policy_batch, value_batch) = {
-                    let mut replay_buffer_mutex = self.replay_buffer.lock().unwrap();
+                    let (replay_buffer_mutex, cvar) = &*self.replay_buffer;
+                    let mut replay_buffer = cvar.wait_while(
+                        replay_buffer_mutex.lock().unwrap(), 
+                        |replay_buffer| replay_buffer.len() < self.args.batch_size
+                    ).unwrap();
         
                     let (state_memory,
                         policy_memory,
                         value_memory
-                    ): (Vec<_>, Vec<_>, Vec<_>) = replay_buffer_mutex
+                    ): (Vec<_>, Vec<_>, Vec<_>) = replay_buffer
                         .pop_iter()
                         .take(self.args.batch_size)
                         .fold(
@@ -120,6 +122,8 @@ impl<T: Net> ModelTrainerWorker<T> {
                                 (states_acc, policies_acc, values_acc)
                             }
                         );
+
+                    replay_buffer_pb.lock().unwrap().set_position(replay_buffer.len() as u64);
                         
                     let state_memory_views: Vec<ArrayView3<f32>> = state_memory
                         .iter()
@@ -147,22 +151,26 @@ impl<T: Net> ModelTrainerWorker<T> {
                 };
                 
                 let loss = self.train_batch(state_batch, policy_batch, value_batch);
-    
-                pb.set_message(format!("Loss: {:.3}", loss));
-                pb.inc(1);
+                training_pb.set_message(format!("Loss: {:.3}", loss));
             }
-            println!("Saving checkpoint");
+
+            // pb.set_message("Saving checkpoint...");
             let latest_checkpoint = format!("{checkpoint_dir}/{i}.safetensors");
             self.var_store.save(latest_checkpoint.clone()).unwrap();
         
-            let mut checkpoint_path = checkpoint_path_rwlock.write().unwrap();
-            *checkpoint_path = Some(latest_checkpoint);
+            // pb.set_message("Pushing latest model...");
+            let mut var_store = varstore_rwlock.write().unwrap();
+            var_store.copy(&self.var_store).unwrap();
+
+            training_pb.inc(1);
         }
+
+        *in_training_rwlock.write().unwrap() = false;
     }
 }
 
 impl<T: Net> SelfPlayWorker<T> {
-    fn self_play(&self) -> (Vec<Array3<f32>>, Vec<Array1<f32>>, Vec<f32>) {
+    fn self_play(&self, worker_pb: &ProgressBar) -> (Vec<Array3<f32>>, Vec<Array1<f32>>, Vec<f32>) {
         let mut state_history: Vec<Array3<f32>> = Vec::new();
         let mut policy_history: Vec<Array1<f32>> = Vec::new();
         let mut value_history: Vec<f32> = Vec::new();
@@ -231,34 +239,46 @@ impl<T: Net> SelfPlayWorker<T> {
                     tree.use_subtree(selected_id);
                 }
             }
+
+            worker_pb.inc(1);
         }
         
         (state_history, policy_history, value_history)
     }
 
-    pub fn self_play_loop(&mut self, checkpoint_path_rwlock: Arc<RwLock<Option<String>>>) {
+    pub fn self_play_loop(
+        &mut self,
+        checkpoint_path_rwlock: Arc<RwLock<VarStore>>,
+        in_training_rwlock: Arc<RwLock<bool>>,
+        worker_pb: &ProgressBar,
+        replay_buffer_pb: Arc<Mutex<ProgressBar>>
+    ) {
+
         loop {
-            println!("Getting latest model");
+            if !*in_training_rwlock.read().unwrap() {
+                worker_pb.finish_with_message("Self-play complete");
+                break;
+            }
+
+            worker_pb.set_message("Getting latest model...");
 
             let mut var_store = VarStore::new(Device::Cpu);
-            let net = T::new(
-                &var_store.root(),
-                Default::default()
-            );
-            if let Some(path) = checkpoint_path_rwlock.read().unwrap().clone() {
-                var_store.load(path).unwrap();
-            }
+            var_store.copy(&checkpoint_path_rwlock.read().unwrap()).unwrap();
+            let net = T::new(&var_store.root(),Default::default());
             var_store.set_device(Device::Mps);
             self.mcts.model.net = net;
 
-            println!("Self-play");
+            worker_pb.set_message("Self-play...");
+
             let (
                 state_history,
                 policy_history,
                 value_history
-            ) = self.self_play();
+            ) = self.self_play(worker_pb);
 
-            println!("Pushing to replay buffer");
+            worker_pb.set_message("Pushing to replay buffer...");
+            // TODO: Shuffle before pushing to replay buffer
+            // TODO: Only push at most 30 positions from a game
             let payload_iter = state_history.iter().zip(policy_history.iter().zip(value_history.iter()))
                 .map(|(state, (policy, value))| 
                     Payload {
@@ -268,8 +288,12 @@ impl<T: Net> SelfPlayWorker<T> {
                     }
                 );
 
-            let mut replay_buffer_mutex = self.replay_buffer.lock().unwrap();
+            let (replay_buffer, cvar) = &*self.replay_buffer;
+            let mut replay_buffer_mutex = replay_buffer.lock().unwrap();
             replay_buffer_mutex.push_iter_overwrite(payload_iter);
+            cvar.notify_one();
+
+            replay_buffer_pb.lock().unwrap().set_position(replay_buffer_mutex.len() as u64);
         }
     }
 }

@@ -424,7 +424,7 @@ impl Policy {
                     1 | 5 => 1,
                     2 | 6 => -2,
                     3 | 7 => -1,
-                    _ => panic!("Height is too large.")
+                    _ => unreachable!()
                 }
             };
 
@@ -464,7 +464,7 @@ impl Policy {
                     1 | 3 => -2,
                     4 | 6 => 1,
                     5 | 7 => 2,
-                    _ => panic!("Height is too large.")
+                    _ => unreachable!()
                 }
             };
 
