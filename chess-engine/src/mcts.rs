@@ -227,30 +227,54 @@ impl<T: Net> Mcts<T> {
         //     );
 
         for _ in 0..self.args.num_searches {
-            let mut trees_to_expand: Vec<_> = trees
-                .par_iter_mut()
-                .update(|tree| {
-                    let mut node = tree.arena.get(0).unwrap();
+            // let mut trees_to_expand: Vec<_> = trees
+            //     .par_iter_mut()
+            //     .update(|tree| {
+            //         let mut node = tree.arena.get(0).unwrap();
 
-                    while node.is_fully_expanded() {
-                        node = tree.arena.get(tree.select(node.id)).unwrap();
-                    }
+            //         while node.is_fully_expanded() {
+            //             node = tree.arena.get(tree.select(node.id)).unwrap();
+            //         }
 
-                    let (value, is_terminal) = node.state.get_value_and_terminated();
+            //         let (value, is_terminal) = node.state.get_value_and_terminated();
 
-                    if is_terminal {
-                        tree.backprop(node.id, value);
-                        tree.node_id_to_expand = None;
-                    } else {
-                        tree.node_id_to_expand = Some(node.id);
-                    }
-                })
-                .filter(|tree| tree.node_id_to_expand.is_some())
-                .collect();
-            
+            //         if is_terminal {
+            //             tree.backprop(node.id, value);
+            //             tree.node_id_to_expand = None;
+            //         } else {
+            //             tree.node_id_to_expand = Some(node.id);
+            //         }
+            //     })
+            //     .filter(|tree| tree.node_id_to_expand.is_some())
+            //     .collect();
+            let mut trees_to_expand = Vec::with_capacity(trees.len());
+            for tree in trees.iter_mut() {
+                let mut node = tree.arena.get(0).unwrap();
+
+                while node.is_fully_expanded() {
+                    node = tree.arena.get(tree.select(node.id)).unwrap();
+                }
+
+                let (value, is_terminal) = node.state.get_value_and_terminated();
+
+                if is_terminal {
+                    tree.backprop(node.id, value);
+                    tree.node_id_to_expand = None;
+                } else {
+                    tree.node_id_to_expand = Some(node.id);
+                    trees_to_expand.push(tree);
+                }
+            }
+
             if !trees_to_expand.is_empty() {
+                // let states = trees_to_expand
+                //     .par_iter_mut()
+                //     .map(|tree|
+                //         &tree.arena.get(tree.node_id_to_expand.unwrap()).unwrap().state
+                //     )
+                //     .collect();
                 let states = trees_to_expand
-                    .par_iter_mut()
+                    .iter()
                     .map(|tree|
                         &tree.arena.get(tree.node_id_to_expand.unwrap()).unwrap().state
                     )
@@ -258,19 +282,48 @@ impl<T: Net> Mcts<T> {
 
                 let (policies, values) = self.model.predict(&states);
 
-                (trees_to_expand, policies, values).into_par_iter()
-                    .for_each(
-                        |(tree, policy, value)| {
-                            let node_id = tree.node_id_to_expand.unwrap();
-                            tree.expand(node_id, policy);
-                            tree.backprop(node_id, value);
-                        }
-                    );
+                // (trees_to_expand, policies, values).into_par_iter()
+                //     .for_each(
+                //         |(tree, policy, value)| {
+                //             let node_id = tree.node_id_to_expand.unwrap();
+                //             tree.expand(node_id, policy);
+                //             tree.backprop(node_id, value);
+                //         }
+                //     );
+                for (tree, (policy, value))
+                    in trees_to_expand.into_iter().zip(policies.into_iter().zip(values)) {
+
+                    let node_id = tree.node_id_to_expand.unwrap();
+                    tree.expand(node_id, policy);
+                    tree.backprop(node_id, value);
+                }
             }
         };
 
+        // trees
+        //     .par_iter_mut()
+        //     .map(|tree| {
+        //         let children_ids = &tree.arena.get(0).unwrap().children_ids;
+
+        //         let mut visit_counts = tree.arena.get(0).unwrap().state.get_zero_policy();
+        //         let mut child_id_to_probs = Vec::with_capacity(children_ids.len());
+
+        //         for child_id in children_ids {
+        //             let child_node = tree.arena.get(*child_id).unwrap();
+
+        //             let action = child_node.action_taken.clone().unwrap();
+        //             let child_visit_count = child_node.visit_count as f32;
+
+        //             visit_counts.set_prob(&action, child_visit_count);
+        //             child_id_to_probs.push((*child_id, child_visit_count));
+        //         }
+
+        //         visit_counts.normalize();
+        //         (visit_counts, child_id_to_probs)
+        //     })
+        //     .collect()
         trees
-            .par_iter_mut()
+            .iter_mut()
             .map(|tree| {
                 let children_ids = &tree.arena.get(0).unwrap().children_ids;
 

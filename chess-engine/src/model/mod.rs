@@ -33,13 +33,20 @@ pub struct Model<T: Net> {
 
 impl<T: Net> Model<T> {
     pub fn predict(&self, states: &Vec<&T::State>) -> (Vec<<<T as crate::model::Net>::State as State>::Policy>, Vec<f32>) {
+        // let encoded_states = states
+        //     .par_iter()
+        //     .map(|state| state.get_encoding())
+        //     .collect::<Vec<_>>();
         let encoded_states = states
-            .par_iter()
+            .iter()
             .map(|state| state.get_encoding())
             .collect::<Vec<_>>();
 
+        // let encoded_state_views = encoded_states
+        //     .par_iter()
+        //     .map(|state| state.view());
         let encoded_state_views = encoded_states
-            .par_iter()
+            .iter()
             .map(|state| state.view());
 
         let encoded_states_ndarray = stack(
@@ -67,8 +74,16 @@ impl<T: Net> Model<T> {
         //     let masked_policy = state.mask_invalid_actions(policy).unwrap();
         //     policies.push(masked_policy);
         // }
+        // let policies = states
+        //     .par_iter()
+        //     .enumerate()
+        //     .map(|(i, state)| {
+        //         let policy = policy_ndarray.index_axis(Axis(0), i);
+        //         state.mask_invalid_actions(policy).unwrap()
+        //     })
+        //     .collect();
         let policies = states
-            .par_iter()
+            .iter()
             .enumerate()
             .map(|(i, state)| {
                 let policy = policy_ndarray.index_axis(Axis(0), i);

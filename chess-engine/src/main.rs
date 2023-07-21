@@ -166,7 +166,7 @@ fn train_concurrent() {
     };
 
     // Self-play workers
-    let self_play_workers: Vec<_> = (0..2).map(|_| {
+    let self_play_workers: Vec<_> = (0..6).map(|_| {
         let mut self_play_var_store = VarStore::new(Device::Cpu);
         self_play_var_store.copy(&var_store).unwrap();
         let self_play_net: model::chess::Net = model::Net::new(
@@ -210,13 +210,12 @@ fn train_concurrent() {
     training_pb.set_prefix("Training");
 
     let self_play_pb_style = ProgressStyle::with_template(
-        "{prefix} {spinner:.green} {wide_msg}"
+        "{prefix} {spinner:.green}"
     )
         .unwrap()
-        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+        .tick_chars(r"/-\| ");
 
     // Spawn workers
-    // TODO: How to end?
     rayon::scope(|s| {
         for (i, mut worker) in self_play_workers.into_iter().enumerate() {
             let worker_checkpoint_path_rwlock = varstore_rwlock.clone();

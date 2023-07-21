@@ -2,10 +2,8 @@ use crate::model::Net;
 use crate::mcts::{Mcts, Tree};
 use crate::game::{State, Policy};
 
-use core::time;
 use std::mem::MaybeUninit;
 use std::sync::{Arc, Mutex, RwLock, Condvar};
-use std::thread::sleep;
 use ringbuf::{SharedRb, Rb};
 use ndarray::{Array3, Array1, ArrayView3, ArrayView1, stack, Axis, Array};
 use tch::{Tensor, Device, kind::Kind, Reduction, nn::{VarStore, Optimizer}};
@@ -154,11 +152,9 @@ impl<T: Net> ModelTrainerWorker<T> {
                 training_pb.set_message(format!("Loss: {:.3}", loss));
             }
 
-            // pb.set_message("Saving checkpoint...");
             let latest_checkpoint = format!("{checkpoint_dir}/{i}.safetensors");
             self.var_store.save(latest_checkpoint.clone()).unwrap();
         
-            // pb.set_message("Pushing latest model...");
             let mut var_store = varstore_rwlock.write().unwrap();
             var_store.copy(&self.var_store).unwrap();
 
@@ -256,11 +252,9 @@ impl<T: Net> SelfPlayWorker<T> {
 
         loop {
             if !*in_training_rwlock.read().unwrap() {
-                worker_pb.finish_with_message("Self-play complete");
+                worker_pb.finish_and_clear();
                 break;
             }
-
-            worker_pb.set_message("Getting latest model...");
 
             let mut var_store = VarStore::new(Device::Cpu);
             var_store.copy(&checkpoint_path_rwlock.read().unwrap()).unwrap();
@@ -268,15 +262,12 @@ impl<T: Net> SelfPlayWorker<T> {
             var_store.set_device(Device::Mps);
             self.mcts.model.net = net;
 
-            worker_pb.set_message("Self-play...");
-
             let (
                 state_history,
                 policy_history,
                 value_history
             ) = self.self_play(worker_pb);
 
-            worker_pb.set_message("Pushing to replay buffer...");
             // TODO: Shuffle before pushing to replay buffer
             // TODO: Only push at most 30 positions from a game
             let payload_iter = state_history.iter().zip(policy_history.iter().zip(value_history.iter()))

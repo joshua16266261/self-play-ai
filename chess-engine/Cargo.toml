@@ -16,7 +16,6 @@ rand_distr = "0.4.3"
 indicatif = "0.17.5"
 rayon = "1.7.0"
 ndarray = { version = "0.15.6", features = ["rayon"] }
-# crossbeam-channel = "0.5.8"
 ringbuf = "0.3.3"
 
 [profile.profiling]
