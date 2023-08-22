@@ -114,7 +114,6 @@ fn play() {
                 tree.use_subtree(best_child_id);
 
                 tree.arena.get(0).unwrap().action_taken.clone().unwrap()
-                // search_results.get_best_action()
             };
         println!("{}", action);
         state = state.get_next_state(&action).unwrap();
@@ -136,25 +135,8 @@ fn play() {
 }
 
 fn train_concurrent() {
-    // Args
-    // let self_play_args = SelfPlayArgs {
-    //     num_mcts_searches: 600,
-    //     ..Default::default()
-    // };
     let self_play_args: SelfPlayArgs = Default::default();
-    // let training_args = TrainingArgs {
-    //     num_batches_per_iter: 2,
-    //     num_train_iters: 2,
-    //     ..Default::default()
-    // };
     let training_args: TrainingArgs = Default::default();
-    // let args = Args {
-    //     num_learn_iters: 2, // Just for profiling
-    //     num_searches: self_play_args.num_mcts_searches,
-    //     num_self_play_iters: 500,
-    //     num_parallel_self_play_games: 2,
-    //     ..Default::default()
-    // };
     let args = Default::default();
 
     let replay_buffer_capacity = training_args.batch_size * 100;

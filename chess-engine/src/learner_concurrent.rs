@@ -231,7 +231,6 @@ impl<T: Net> SelfPlayWorker<T> {
                 } else {
                     // Next search starts from new sampled state
                     tree.node_id_to_expand = None;
-                    // tree.arena = vec![Node::create_root_node(state.clone())];
                     tree.use_subtree(selected_id);
                 }
             }
@@ -270,9 +269,6 @@ impl<T: Net> SelfPlayWorker<T> {
                 value_history
             ) = self.self_play(worker_pb);
 
-            // TODO: Shuffle before pushing to replay buffer
-            // TODO: Only push at most 30 positions from a game
-
             let payload_iter = state_history.iter().zip(policy_history.iter().zip(value_history.iter()))
                 .map(|(state, (policy, value))| 
                     Payload {
@@ -286,7 +282,6 @@ impl<T: Net> SelfPlayWorker<T> {
 
             let (replay_buffer, cvar) = &*self.replay_buffer;
             let mut replay_buffer_mutex = replay_buffer.lock().unwrap();
-            // replay_buffer_mutex.push_iter_overwrite(payload_iter);
             replay_buffer_mutex.push_iter_overwrite(payload_shuffled.into_iter());
             cvar.notify_one();
 

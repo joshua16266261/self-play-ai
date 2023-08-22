@@ -64,21 +64,6 @@ impl<T: State> Node<T> {
     }
 }
 
-// impl<T: State> Default for Node<T> {
-//     fn default() -> Self {
-//         Self {
-//             state: T::default(),
-//             id: 0,
-//             parent_id: None,
-//             action_taken: None,
-//             prior: None,
-//             children_ids: Vec::new(),
-//             visit_count: 1,
-//             value_sum: 0.0
-//         }
-//     }
-// }
-
 impl<T: State> Default for Tree<T> {
     fn default() -> Self { 
         Self {

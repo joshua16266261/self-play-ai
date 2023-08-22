@@ -87,7 +87,6 @@ impl<T: Net> Learner<'_, T> {
                 } else {
                     // Next search starts from new sampled state
                     tree.node_id_to_expand = None;
-                    // tree.arena = vec![Node::create_root_node(state.clone())];
                     tree.use_subtree(selected_id);
                 }
             }
@@ -194,9 +193,5 @@ impl<T: Net> Learner<'_, T> {
 
             learn_pb.inc(1);
         }
-
-        // learn_pb.finish_and_clear();
-        // self_play_pb.finish_and_clear();
-        // train_pb.finish_and_clear();
     }
 }
