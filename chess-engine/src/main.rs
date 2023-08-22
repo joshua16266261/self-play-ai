@@ -9,7 +9,7 @@ use mcts::{Args, Tree, Mcts};
 use learner::Learner;
 use tch::{nn::{VarStore, Adam, OptimizerConfig, Optimizer}, Device};
 use game::{State, Policy, Status, Player};
-use chess::ChessMove;
+// use chess::ChessMove;
 use learner_concurrent::{SelfPlayArgs, TrainingArgs, SelfPlayWorker, ModelTrainerWorker};
 use ringbuf::{HeapRb, Rb, Consumer};
 use std::{sync::{Arc, Mutex, RwLock, Condvar}, fs::create_dir};
@@ -17,12 +17,14 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 // static CHECKPOINT_DIR: &str = "tictactoe_cp";
 // static HUMAN_PLAYER: game::tictactoe::Player = game::tictactoe::Player::X;
-static CHECKPOINT_DIR: &str = "chess_cp";
-static HUMAN_PLAYER: game::chess::Player = game::chess::Player::White;
+// static CHECKPOINT_DIR: &str = "chess_cp";
+// static HUMAN_PLAYER: game::chess::Player = game::chess::Player::White;
+static CHECKPOINT_DIR: &str = "connect4_cp";
+static HUMAN_PLAYER: game::connect_four::Player = game::connect_four::Player::X;
 
 fn train() {
     let mut var_store = VarStore::new(Device::Cpu);
-    let net: model::chess::Net = model::Net::new(
+    let net: model::connect_four::Net = model::Net::new(
         &var_store.root(),
         Default::default()
     );
@@ -51,42 +53,55 @@ fn train() {
 
 fn play() {
     let mut var_store = VarStore::new(Device::Cpu);
-    let net: model::chess::Net = model::Net::new(
+    let net: model::connect_four::Net = model::Net::new(
         &var_store.root(),
         Default::default()
     );
 
-    var_store.load(format!("{CHECKPOINT_DIR}/2.safetensors")).unwrap();
+    var_store.load(format!("{CHECKPOINT_DIR}/9.safetensors")).unwrap();
     var_store.set_device(Device::Mps);
 
     // let args = Args::default();
     let args = Args {
-        num_searches: 6000,
+        num_searches: 1000,
         ..Default::default()
     };
     let model = Model{ args, net };
     let mcts = Mcts{ args, model };
 
-    let mut state = game::chess::State::default();
+    let mut state = game::connect_four::State::default();
     let mut tree = Tree::with_root_state(state.clone());
-    // let mut tree_vec = ;
 
     loop {
         println!("{state}");
 
         let action =
             if state.get_current_player() == HUMAN_PLAYER {
-                // let mut line = String::new();
-                // let _ = std::io::stdin().read_line(&mut line).unwrap();
+                let mut line = String::new();
+                let _ = std::io::stdin().read_line(&mut line).unwrap();
+
+                let col = line.split_whitespace().next().unwrap().parse::<usize>().unwrap();
+                let action = game::connect_four::Action(col);
+
                 // let mut split = line.split_whitespace();
                 // let row = split.next().unwrap().parse::<usize>().unwrap();
                 // let col = split.next().unwrap().parse::<usize>().unwrap();
+                // let action = game::tictactoe::Action { row, col };
 
-                // game::tictactoe::Action { row, col }
+                let next_state = state.get_next_state(&action).unwrap();
+                let child_id = tree.arena.iter().position(|node| node.state == next_state);
 
-                let mut line = String::new();
-                let _ = std::io::stdin().read_line(&mut line).unwrap();
-                ChessMove::from_san(&state.game.current_position(), line.as_str()).unwrap()
+                if let Some(id) = child_id {
+                    tree.use_subtree(id);
+                } else {
+                    tree = Tree::with_root_state(next_state);
+                }
+
+                action                
+
+                // let mut line = String::new();
+                // let _ = std::io::stdin().read_line(&mut line).unwrap();
+                // ChessMove::from_san(&state.game.current_position(), line.as_str()).unwrap()
             } else {
                 let (_, child_id_to_probs) = &mcts.search(&mut vec![&mut tree])[0];
 
@@ -98,10 +113,10 @@ fn play() {
                 
                 tree.use_subtree(best_child_id);
 
-                tree.arena.get(0).unwrap().action_taken.unwrap()
+                tree.arena.get(0).unwrap().action_taken.clone().unwrap()
                 // search_results.get_best_action()
             };
-
+        println!("{}", action);
         state = state.get_next_state(&action).unwrap();
 
         match state.get_status() {
@@ -122,34 +137,37 @@ fn play() {
 
 fn train_concurrent() {
     // Args
-    let self_play_args = SelfPlayArgs {
-        num_mcts_searches: 2,
-        ..Default::default()
-    };
-    let training_args = TrainingArgs {
-        num_batches_per_iter: 2,
-        num_train_iters: 2,
-        ..Default::default()
-    };
-    let args = Args {
-        num_learn_iters: 2, // Just for profiling
-        num_searches: self_play_args.num_mcts_searches,
-        num_self_play_iters: 2,
-        num_parallel_self_play_games: 2,
-        ..Default::default()
-    };
+    // let self_play_args = SelfPlayArgs {
+    //     num_mcts_searches: 600,
+    //     ..Default::default()
+    // };
+    let self_play_args: SelfPlayArgs = Default::default();
+    // let training_args = TrainingArgs {
+    //     num_batches_per_iter: 2,
+    //     num_train_iters: 2,
+    //     ..Default::default()
+    // };
+    let training_args: TrainingArgs = Default::default();
+    // let args = Args {
+    //     num_learn_iters: 2, // Just for profiling
+    //     num_searches: self_play_args.num_mcts_searches,
+    //     num_self_play_iters: 500,
+    //     num_parallel_self_play_games: 2,
+    //     ..Default::default()
+    // };
+    let args = Default::default();
 
     let replay_buffer_capacity = training_args.batch_size * 100;
     let replay_buffer = Arc::new((Mutex::new(HeapRb::new(replay_buffer_capacity)), Condvar::new()));
 
     let mut var_store = VarStore::new(Device::Cpu);
-    let _: model::chess::Net = model::Net::new(&var_store.root(), Default::default());
+    let _: model::connect_four::Net = model::Net::new(&var_store.root(), Default::default());
     var_store.set_device(Device::Mps);
 
     // Model trainer worker
     let mut trainer_var_store = VarStore::new(Device::Cpu);
     trainer_var_store.copy(&var_store).unwrap();
-    let trainer_net: model::chess::Net = model::Net::new(
+    let trainer_net: model::connect_four::Net = model::Net::new(
         &trainer_var_store.root(),
         Default::default()
     );
@@ -169,11 +187,12 @@ fn train_concurrent() {
     let self_play_workers: Vec<_> = (0..6).map(|_| {
         let mut self_play_var_store = VarStore::new(Device::Cpu);
         self_play_var_store.copy(&var_store).unwrap();
-        let self_play_net: model::chess::Net = model::Net::new(
+        let self_play_net: model::connect_four::Net = model::Net::new(
             &self_play_var_store.root(),
             Default::default()
         );
         self_play_var_store.set_device(Device::Mps);
+        self_play_var_store.freeze();
 
         let model = Model { args, net: self_play_net };
         let mcts = Mcts { args, model };
@@ -234,11 +253,10 @@ fn train_concurrent() {
 }
 
 fn main() {
-    // train();
-    
-    // play();
-
     let _ = create_dir(CHECKPOINT_DIR);
+    // train();
 
-    train_concurrent();
+    // train_concurrent();
+
+    play();
 }

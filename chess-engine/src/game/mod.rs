@@ -1,5 +1,6 @@
 pub mod tictactoe;
 pub mod chess;
+pub mod connect_four;
 
 use rand::rngs::ThreadRng;
 use ndarray::{Array1, Array3, ArrayView1};
@@ -17,7 +18,7 @@ pub trait Player: Eq + Copy {
     fn get_opposite(&self) -> Self;
 }
 
-pub trait State: Default + Clone + Send + Sync {
+pub trait State: Default + Clone + Send + Sync + PartialEq {
     type Policy: Policy;
     type Player: Player;
 

@@ -41,6 +41,13 @@ impl super::Player for Player {
     }
 }
 
+impl PartialEq for State {
+    fn eq(&self, other: &Self) -> bool {
+        self.game.current_position() == other.game.current_position() &&
+            self.fifty_move_rule_halfmove_counter == other.fifty_move_rule_halfmove_counter
+    }
+}
+
 impl State {
     fn get_num_repetitions(&self) -> u64 {
         let mut counter = 0;

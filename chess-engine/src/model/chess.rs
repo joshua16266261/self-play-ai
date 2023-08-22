@@ -9,8 +9,8 @@ pub struct Net {
 }
 
 pub struct Args {
-    num_resnet_blocks: u32,
-    num_hidden: i64
+    pub num_resnet_blocks: u32,
+    pub num_hidden: i64
 }
 
 impl Default for Args {

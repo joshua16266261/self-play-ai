@@ -1,4 +1,4 @@
-use crate::game::tictactoe;
+use crate::game::connect_four;
 use tch::{Tensor, nn::{SequentialT, ModuleT}};
 use tch::nn;
 
@@ -44,7 +44,7 @@ impl Default for Args {
 // }
 
 impl super::Net for Net {
-    type State = tictactoe::State;
+    type State = connect_four::State;
     type Args = Args;
 
     fn new(vs: &nn::Path, args: Args) -> Self {
@@ -54,20 +54,20 @@ impl super::Net for Net {
         let conv_config = nn::ConvConfig { padding: 1, ..Default::default() };
         Self {
             torso: nn::seq_t()
-                .add_fn(|x| x.view((-1, 3, 3, 3)))
+                .add_fn(|x| x.view((-1, 3, 6, 7)))
                 .add(super::new_resnet(vs, num_resnet_blocks, 3, num_hidden)),
             policy_head: nn::seq_t()
                 .add(nn::conv2d(vs, num_hidden, 32, 3, conv_config))
                 .add(nn::batch_norm2d(vs, 32, Default::default()))
                 .add_fn(|x| x.relu())
                 .add_fn(|x| x.flat_view())
-                .add(nn::linear(vs, 32 * 9, 9, Default::default())),
+                .add(nn::linear(vs, 32 * 6 * 7, 7, Default::default())),
             value_head: nn::seq_t()
                 .add(nn::conv2d(vs, num_hidden, 3, 3, conv_config))
                 .add(nn::batch_norm2d(vs, 3, Default::default()))
                 .add_fn(|x| x.relu())
                 .add_fn(|x| x.flat_view())
-                .add(nn::linear(vs, 3 * 9, 1, Default::default()))
+                .add(nn::linear(vs, 3 * 6 * 7, 1, Default::default()))
                 .add_fn(|x| x.tanh())
         }
     }

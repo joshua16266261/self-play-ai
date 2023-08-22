@@ -51,9 +51,9 @@ impl Default for SelfPlayArgs {
     fn default() -> Self {
         Self {
             c: 2.0,
-            num_mcts_searches: 60,
+            num_mcts_searches: 600,
             temperature: 1.25,
-            num_batched_self_play_games: 2
+            num_batched_self_play_games: 100
         }
     }
 }
@@ -61,8 +61,8 @@ impl Default for SelfPlayArgs {
 impl Default for TrainingArgs {
     fn default() -> Self {
         Self {
-            batch_size: 64,
-            num_batches_per_iter: 10,
+            batch_size: 128,
+            num_batches_per_iter: 20,
             num_train_iters: 10
         }
     }
@@ -250,6 +250,8 @@ impl<T: Net> SelfPlayWorker<T> {
         replay_buffer_pb: Arc<Mutex<ProgressBar>>
     ) {
 
+        let mut rng = rand::thread_rng();
+
         loop {
             if !*in_training_rwlock.read().unwrap() {
                 worker_pb.finish_and_clear();
@@ -270,6 +272,7 @@ impl<T: Net> SelfPlayWorker<T> {
 
             // TODO: Shuffle before pushing to replay buffer
             // TODO: Only push at most 30 positions from a game
+
             let payload_iter = state_history.iter().zip(policy_history.iter().zip(value_history.iter()))
                 .map(|(state, (policy, value))| 
                     Payload {
@@ -279,9 +282,12 @@ impl<T: Net> SelfPlayWorker<T> {
                     }
                 );
 
+            let payload_shuffled = payload_iter.choose_multiple(&mut rng, (state_history.len() as f32 * 0.3) as usize);
+
             let (replay_buffer, cvar) = &*self.replay_buffer;
             let mut replay_buffer_mutex = replay_buffer.lock().unwrap();
-            replay_buffer_mutex.push_iter_overwrite(payload_iter);
+            // replay_buffer_mutex.push_iter_overwrite(payload_iter);
+            replay_buffer_mutex.push_iter_overwrite(payload_shuffled.into_iter());
             cvar.notify_one();
 
             replay_buffer_pb.lock().unwrap().set_position(replay_buffer_mutex.len() as u64);

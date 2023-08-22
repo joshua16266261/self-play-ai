@@ -47,12 +47,12 @@ impl Default for Args {
     fn default() -> Self {
         Args {
             c: 2.0,
-            num_searches: 1000,
+            num_searches: 600,
             temperature: 1.25,
-            num_learn_iters: 3,
+            num_learn_iters: 10,
             num_self_play_iters: 500,
-            num_parallel_self_play_games: 1,
-            batch_size: 64,
+            num_parallel_self_play_games: 100,
+            batch_size: 32,
             num_epochs: 4
         }
     }
