@@ -1,1 +1,2 @@
-# chess-bot
+## Build
+See https://github.com/ssoudan/tch-m1
