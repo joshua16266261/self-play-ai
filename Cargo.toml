@@ -1,5 +1,5 @@
 [package]
-name = "chess-engine"
+name = "self-play-ai"
 version = "0.1.0"
 edition = "2021"
 

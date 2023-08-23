@@ -238,7 +238,7 @@ fn main() {
     let _ = create_dir(CHECKPOINT_DIR);
     // train();
 
-    // train_concurrent();
+    train_concurrent();
 
-    play();
+    // play();
 }
